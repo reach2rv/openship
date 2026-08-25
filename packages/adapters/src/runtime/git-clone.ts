@@ -46,6 +46,16 @@ export function gitCredentialPair(
   // own domain, GitLab, Gitea — takes the x-access-token form, which works
   // wherever an arbitrary username is accepted. Narrowing this test can only
   // route a host to the general form, never strand one without a credential.
+  if (
+    hostname === "dev.azure.com" ||
+    hostname.endsWith(".dev.azure.com") ||
+    hostname === "visualstudio.com" ||
+    hostname.endsWith(".visualstudio.com")
+  ) {
+    // Azure PAT auth: any non-empty username + PAT as password. Username is a
+    // dummy so both Basic-auth slots stay filled (empty password trips GIT_ASKPASS).
+    return { username: "pat", password: token };
+  }
   if (hostname === "github.com" && !token.startsWith("ghs_")) {
     return { username: token, password: "x-oauth-basic" };
   }
