@@ -382,17 +382,14 @@ export async function reapplyProjectLiveRoutes(
       .map((r) => managedHostnameToSlug(r.hostname))
       .filter((s): s is string => !!s);
     if (droppedSlugs.length > 0) {
-      void deregisterManagedEdgeRoutes(droppedSlugs, {
+      const result = await deregisterManagedEdgeRoutes(droppedSlugs, {
         organizationId: project.organizationId,
-      })
-        .then(({ failures }) => {
-          if (failures.length > 0) {
-            console.warn(
-              `[project-route] ${project.slug}: managed edge deregister failed for ${failures.join(", ")}`,
-            );
-          }
-        })
-        .catch(() => {});
+      }).catch(() => null);
+      if (result && result.failures.length > 0) {
+        console.warn(
+          `[project-route] ${project.slug}: managed edge deregister failed for ${result.failures.join(", ")}`,
+        );
+      }
     }
   }
 
@@ -439,10 +436,11 @@ export async function reapplyProjectLiveRoutes(
     // above — so editing ONE route never re-hits Oblien (or re-resolves the target
     // host) for the project's OTHER, unchanged routes. A target-host change on an
     // UNCHANGED hostname (e.g. a server move) is re-synced by the deploy path, not
-    // here. Best-effort/fire-and-forget: the app is live locally; a failure only
-    // delays the free URL (same contract as the deploy path's sync).
+    // here. Best-effort, but awaited: returning while this remote writer was
+    // still alive let project deletion remove the route and then watch this task
+    // recreate it without any surviving project/orphan record.
     const previouslyPresent = new Set(previousHostnames.map((h) => h.toLowerCase()));
-    const syncAddedManagedEdge = () => {
+    const syncAddedManagedEdge = async () => {
       if (opts.managedEdgeSyncedByCaller) return;
       // NOT filtered by target kind. The edge route is `<slug>.opsh.io` → this
       // server's :80; what the vhost then does with the request — proxy to a
@@ -456,18 +454,15 @@ export async function reapplyProjectLiveRoutes(
         .map((d) => ({ hostname: d.hostname, subdomain: managedHostnameToSlug(d.hostname) }))
         .filter((t): t is { hostname: string; subdomain: string } => !!t.subdomain);
       if (addedTargets.length === 0) return;
-      void syncManagedEdgeRoutes(addedTargets, {
+      const result = await syncManagedEdgeRoutes(addedTargets, {
         organizationId: project.organizationId,
         serverId: serverId ?? undefined,
-      })
-        .then(({ failures }) => {
-          if (failures.length > 0) {
-            console.warn(
-              `[project-route] ${project.slug}: managed edge sync failed for ${failures.join(", ")}`,
-            );
-          }
-        })
-        .catch(() => {});
+      }).catch(() => null);
+      if (result && result.failures.length > 0) {
+        console.warn(
+          `[project-route] ${project.slug}: managed edge sync failed for ${result.failures.join(", ")}`,
+        );
+      }
     };
 
     const containerId = deployment.containerId;
@@ -525,7 +520,7 @@ export async function reapplyProjectLiveRoutes(
       await pushProjectAnalyticsConfig(project.id, serverId ?? null, previousHostnames).catch(
         () => {},
       );
-      syncAddedManagedEdge();
+      await syncAddedManagedEdge();
       return;
     }
 
@@ -719,7 +714,7 @@ export async function reapplyProjectLiveRoutes(
     // Register the newly-added managed slug(s) on the cloud edge (the "add" half
     // of the edit; dropped slugs were deregistered above). Per-route — unchanged
     // hostnames are not re-synced.
-    syncAddedManagedEdge();
+    await syncAddedManagedEdge();
   } finally {
     disposePlatform(resolved);
   }

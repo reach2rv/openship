@@ -54,8 +54,8 @@ vi.mock("../../../src/modules/route-rules/route-rule.service", () => ({
   pushProjectRules: vi.fn().mockResolvedValue(undefined),
 }));
 
-// The managed-edge sync is fire-and-forget inside the re-apply; mocked so no test
-// reaches the network and so the "which domains got synced" half is assertable.
+// The managed-edge sync is awaited inside the re-apply; mocked so no test reaches
+// the network and so the "which domains got synced" half is assertable.
 vi.mock("../../../src/lib/managed-edge-proxy", () => ({
   syncManagedEdgeRoutes: syncManagedEdge,
   deregisterManagedEdgeRoutes: deregisterManagedEdge,
@@ -74,6 +74,8 @@ import {
 beforeEach(() => {
   listServicesByDeployment.mockReset().mockResolvedValue([]);
   listServicesByProject.mockReset().mockResolvedValue([]);
+  syncManagedEdge.mockReset().mockResolvedValue({ failures: [] });
+  deregisterManagedEdge.mockReset().mockResolvedValue({ failures: [] });
 });
 
 describe("shouldRefuseLoopbackRoute", () => {
@@ -398,6 +400,28 @@ describe("reapplyProjectLiveRoutes static (path-targeted) routes", () => {
     expect(syncManagedEdge.mock.calls[0][0]).toEqual([
       { hostname: "sadsa.opsh.io", subdomain: "sadsa" },
     ]);
+  });
+
+  it("does not report route re-apply quiescent while managed-edge sync is still writing", async () => {
+    let releaseSync!: () => void;
+    syncManagedEdge.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseSync = () => resolve({ failures: [] });
+      }),
+    );
+    listByProject.mockResolvedValue([domain("/")]);
+    findDeployment.mockResolvedValue(deployment({ staticServeOutputDir: "dist" }));
+
+    let settled = false;
+    const applying = reapplyProjectLiveRoutes(staticProject, []).then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(syncManagedEdge).toHaveBeenCalled());
+    expect(settled).toBe(false);
+
+    releaseSync();
+    await applying;
+    expect(settled).toBe(true);
   });
 
   it("does not re-sync a hostname that was already present", async () => {

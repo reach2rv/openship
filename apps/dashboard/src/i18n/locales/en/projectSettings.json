@@ -910,6 +910,9 @@
       "includeWwwFallback": "yourdomain.com",
       "externalIngress": "External ingress & TLS",
       "externalIngressDesc": "TLS terminates upstream (Cloudflare Tunnel, load balancer). Verify by TXT only — the domain need not point at this server, and we won't issue a certificate.",
+      "dnsChallenge": "Use DNS-01 challenge",
+      "dnsChallengeDesc": "Issue and renew the certificate through your connected DNS provider. Use this when port 80 cannot be reached.",
+      "dnsChallengeWildcardDesc": "Wildcard certificates require DNS-01 and a connected DNS provider.",
       "noWww": "That domain is already on this project.",
       "adding": "Adding...",
       "submit": "Add domain"

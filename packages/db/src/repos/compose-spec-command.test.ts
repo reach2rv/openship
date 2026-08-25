@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { composeSpecDiff, composeSpecsEqual, composeWritePatch, toComposeSpec } from "./service.repo";
+import {
+  composeSpecDiff,
+  composeSpecsEqual,
+  composeWritePatch,
+  toComposeSpec,
+} from "./service.repo";
 
 /**
  * #332 drift stability: adding structured `commandArgv` must NOT make a legacy
@@ -16,14 +21,28 @@ describe("compose command drift stability (#332)", () => {
       commandArgv: ["serve", "--host", "0.0.0.0"],
     });
     expect(composeSpecsEqual(legacy, reparsed)).toBe(true);
-    expect(composeSpecDiff(legacy, reparsed).some((c) => c.field === "command" || c.field === "commandArgv")).toBe(false);
+    expect(
+      composeSpecDiff(legacy, reparsed).some(
+        (c) => c.field === "command" || c.field === "commandArgv",
+      ),
+    ).toBe(false);
   });
 
   it("a genuine argv change is still flagged", () => {
-    const before = toComposeSpec({ command: "serve --host 0.0.0.0", commandArgv: ["serve", "--host", "0.0.0.0"] });
-    const after = toComposeSpec({ command: "serve --host ::", commandArgv: ["serve", "--host", "::"] });
+    const before = toComposeSpec({
+      command: "serve --host 0.0.0.0",
+      commandArgv: ["serve", "--host", "0.0.0.0"],
+    });
+    const after = toComposeSpec({
+      command: "serve --host ::",
+      commandArgv: ["serve", "--host", "::"],
+    });
     expect(composeSpecsEqual(before, after)).toBe(false);
-    expect(composeSpecDiff(before, after).some((c) => c.field === "command" || c.field === "commandArgv")).toBe(true);
+    expect(
+      composeSpecDiff(before, after).some(
+        (c) => c.field === "command" || c.field === "commandArgv",
+      ),
+    ).toBe(true);
   });
 
   it("args-with-spaces: a real representation difference the old join lost is caught", () => {
@@ -202,7 +221,7 @@ describe("composeWritePatch — entrypoint is compose-owned (#575)", () => {
       storedOverride,
       fromFile,
     );
-    expect(patch.advanced.entrypoint).toEqual(["/new-init.sh", "-v"]);
+    expect(patch.advanced?.entrypoint).toEqual(["/new-init.sh", "-v"]);
   });
 
   it("KEEPS an empty array — the clear survives the owned-key sweep", () => {
@@ -211,12 +230,12 @@ describe("composeWritePatch — entrypoint is compose-owned (#575)", () => {
       storedOverride,
       fromFile,
     );
-    expect(patch.advanced.entrypoint).toEqual([]);
+    expect(patch.advanced?.entrypoint).toEqual([]);
   });
 
   it("drops the override when the file no longer declares one", () => {
     const patch = composeWritePatch({ name: "web", advanced: {} }, storedOverride, fromFile);
-    expect(patch.advanced.entrypoint).toBeUndefined();
+    expect(patch.advanced?.entrypoint).toBeUndefined();
   });
 
   // The half that must NOT delete: several syncFromCompose callers pass a release's
@@ -224,7 +243,7 @@ describe("composeWritePatch — entrypoint is compose-owned (#575)", () => {
   // all — so its silence cannot be read as "the operator removed the entrypoint".
   it("leaves it alone when the writer is not speaking for the file", () => {
     const patch = composeWritePatch({ name: "web", advanced: {} }, storedOverride);
-    expect(patch.advanced.entrypoint).toEqual(["/old-init.sh"]);
+    expect(patch.advanced?.entrypoint).toEqual(["/old-init.sh"]);
   });
 
   it("does not disturb sibling advanced keys compose cannot express", () => {
@@ -233,8 +252,8 @@ describe("composeWritePatch — entrypoint is compose-owned (#575)", () => {
       { advanced: { entrypoint: ["/old-init.sh"], readiness: { enabled: true } } },
       fromFile,
     );
-    expect(patch.advanced.entrypoint).toEqual([]);
-    expect(patch.advanced.readiness).toEqual({ enabled: true });
+    expect(patch.advanced?.entrypoint).toEqual([]);
+    expect(patch.advanced?.readiness).toEqual({ enabled: true });
   });
 });
 

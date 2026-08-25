@@ -34,6 +34,7 @@ import { createServer } from "node:net";
 import { DockerRuntime, NoopInfraProvider, createHostExecutor } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { encrypt } from "../../src/lib/encryption";
+import { LOCAL_HOST_PORT_TARGET } from "../../src/lib/host-port-target";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
 
@@ -89,6 +90,21 @@ async function waitForRestore(
     if (fresh) {
       last = fresh.status;
       if (["ready", "partial_failure", "failed", "cancelled"].includes(fresh.status)) {
+        // `ready` means traffic may flow; the build worker can still be finishing
+        // lifecycle cleanup. A following rollback must wait for the stronger
+        // repository quiescence acknowledgement used by production admission.
+        if (fresh.status === "ready") {
+          let quiescent = false;
+          while (Date.now() < deadline) {
+            const inFlight = await repos.deployment.listInFlightByProject(projectId);
+            if (!inFlight.some((row) => row.id === fresh.id)) {
+              quiescent = true;
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 100));
+          }
+          if (!quiescent) throw new Error(`restore ${fresh.id} became ready but never quiesced`);
+        }
         return fresh as never;
       }
     }
@@ -182,6 +198,9 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
       runtimeMode: "docker" as const,
       usesManagedRouting: false,
       serverId: null,
+      // Match the real local resolver: host-port allocation is serialized by
+      // the physical bind namespace, not by a nullable server-row id.
+      hostPortTarget: LOCAL_HOST_PORT_TARGET,
     };
     vi.doMock("../../src/lib/deployment-runtime", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
@@ -205,7 +224,20 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
         platform: () => localPlatform.platform,
       };
     });
-    // 2. GitHub check runs: there's no installation in a test org.
+    // 2. This fixture deliberately has no edge daemon. Preserve the production
+    // strict-inventory contract, but provide its authoritative empty result so
+    // the rollback test can exercise loopback allocation without provisioning
+    // unrelated edge infrastructure.
+    vi.doMock("@repo/adapters", async (importOriginal) => {
+      const actual = (await importOriginal()) as Record<string, unknown>;
+      return {
+        ...actual,
+        edgeProxyFor: () => ({
+          listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+        }),
+      };
+    });
+    // 3. GitHub check runs: there's no installation in a test org.
     // Keep everything real except the GitHub calls (no installation in a test org).
     vi.doMock("../../src/modules/deployments/service-checks", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;

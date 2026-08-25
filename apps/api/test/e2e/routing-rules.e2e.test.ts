@@ -119,7 +119,15 @@ async function renderVhost(route: RouteConfig): Promise<string> {
     rm: async (p: string) => void files.delete(p),
   } as unknown as RootChecked;
 
-  const nginx = new NginxProvider({ paths: OPENRESTY_DEFAULT_PATHS, executor });
+  // These files are loaded by the container edge booted below. Model that real
+  // target so registerRoute uses the container reload contract; the in-memory
+  // transport intentionally has no bare-host process to discover or signal.
+  const nginx = new NginxProvider({
+    paths: OPENRESTY_DEFAULT_PATHS,
+    executor,
+    containerEdge: true,
+    pinPaths: true,
+  });
   await nginx.registerRoute(route);
   const conf = [...files.entries()].find(([p]) => p.endsWith(".conf"));
   if (!conf) throw new Error(`registerRoute wrote no vhost for ${route.domain}`);

@@ -103,6 +103,14 @@ Git credential boundaries, and edge recovery across Linux and macOS.
   missing, Retry Routing reconciles and health-checks it before touching vhosts.
   An unrecoverable edge returns an actionable warning immediately instead of
   hanging until the route request times out (#693).
+- **Project deletion no longer deadlocks on a bare OpenResty listener** — route
+  cleanup validates the installed configuration and signals only the verified
+  running master instead of starting a second nginx process on ports 80/443.
+  Listener checks account for every socket owner, including mixed
+  `SO_REUSEPORT` listeners, and fail closed when ownership cannot be proven.
+  Delete flags now work consistently in query strings and JSON bodies;
+  `forceOrphan` records unfinished host cleanup durably before removing the
+  project so the garbage collector can retry it safely (#700).
 
 ### Hosts and edge
 

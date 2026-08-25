@@ -20,7 +20,6 @@ import {
   normalizeAliasStrict,
   resolveCommandArgv,
   safeErrorMessage,
-  withTimeout,
   type ComposeAdvanced,
   type ServiceContainerState,
   type StackId,
@@ -112,12 +111,11 @@ import type {
   TUpdateServiceBody,
   TSetServiceEnvVarsBody,
 } from "./service.schema";
+import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 
-/** Cap how long a route update AWAITS the (SSH) edge re-register before
- *  returning. Past this, the DB change is already saved and the edge apply
- *  finishes in the background — so a slow REMOTE edge never hangs the modal on a
- *  change that already took effect. Routing is best-effort; routingUnsynced
- *  surfaces if the background apply lags. */
+/** Cap how long the HTTP path waits for the SSH edge re-register. The underlying
+ *  operation keeps the project runtime lock until it really settles, so a slow
+ *  write may outlive the response but can never outlive a concurrent teardown. */
 const ROUTE_EDGE_APPLY_TIMEOUT_MS = 6000;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1073,8 +1071,11 @@ export async function updateService(
       // request: bound the await and, past the cap, RETURN while it finishes in
       // the background. Otherwise the modal spins and times out on a change that
       // already applied (the reported "keeps loading, but it took effect").
-      const applyEdge = (async () => {
-        await reconcileProjectRoutes(project, {
+      const applyEdge = withLiveProjectRuntimeMutation(project.id, async (liveProject) => {
+        // A newer deployment makes every captured upstream below stale. Do not
+        // overwrite its routes even though the project itself is still live.
+        if (dep && liveProject.activeDeploymentId !== dep.id) return;
+        await reconcileProjectRoutes(liveProject, {
           deployment: dep,
           hostPortTarget,
           registers,
@@ -1086,7 +1087,7 @@ export async function updateService(
         for (const domainId of freshlyPublishedDomainIds) {
           await reuseServerCertForDomain(ctx, domainId).catch(() => {});
         }
-      })();
+      });
       applyEdge.catch((err) => console.error(`[SERVICE] edge apply for ${svc.name}:`, err));
       await Promise.race([
         applyEdge,
@@ -1095,8 +1096,9 @@ export async function updateService(
     } catch (err) {
       console.error(`[SERVICE] Failed to update route for ${svc.name}:`, err);
     } finally {
-      // `applyEdge` may still be running past the race above, but it resolves its
-      // own routing/executor from the deployment — it never touches this runtime.
+      // `applyEdge` may still be running past the race above, but it retains the
+      // project runtime lock and resolves its own routing/executor from the
+      // deployment — it never touches this runtime.
       await runtime?.dispose?.().catch(() => {});
     }
   }
@@ -1104,79 +1106,58 @@ export async function updateService(
   return maskServiceEnv(updated);
 }
 
-/** Best-effort runtime/route teardown is bounded so a slow or unreachable box
- *  can't hang the delete request past the DB-row removal (the authoritative op). */
-const SERVICE_TEARDOWN_TIMEOUT_MS = 20_000;
-
-export async function deleteService(ctx: RequestContext, projectId: string, serviceId: string) {
-  const { project, svc } = await assertServiceAccess(ctx, projectId, serviceId);
-  // The self-app project's services ARE the Openship stack (api, dashboard, edge,
-  // postgres, redis), linked so the dashboard can show their state, logs and shell.
-  // One shared policy for every mutating surface — see controller-helpers.
-  assertNotControlPlane(project);
-
+async function deleteLiveService(project: Project, svc: Service): Promise<void> {
+  const serviceId = svc.id;
   if (project.activeDeploymentId) {
     const dep = await repos.deployment.findById(project.activeDeploymentId);
     const serviceDeployments = await repos.service.listByDeployment(project.activeDeploymentId);
     const serviceDeployment = serviceDeployments.find((row) => row.serviceId === serviceId);
 
     if (dep && serviceDeployment?.containerId) {
-      // Runtime teardown is best-effort AND time-bounded: reaching the box is an
-      // SSH round-trip, so a slow/unreachable server or a stale container (e.g. a
-      // legacy row whose container is already gone) must never HANG the request.
-      // The `.catch()`es only cover rejection — a hang would block until the HTTP
-      // request aborts and the DB removal below (the authoritative, atomic op)
-      // would never run, so the row could never be deleted. withTimeout converts a
-      // hang into a caught failure; a lingering container is reaped by images:gc /
-      // manual cleanup. Keyed on serviceId throughout — never by name.
+      // Keep the project runtime lock until the underlying mutation genuinely
+      // settles. Promise-racing a destroy only stops waiting; it cannot stop the
+      // remote command, which could otherwise remove a freshly redeployed
+      // resource after this delete released the lock. Keyed on serviceId
+      // throughout—never by name.
       const containerId = serviceDeployment.containerId;
-      await withTimeout(
-        (async () => {
-          const { platform } = await resolveServicePlatform(project, dep);
-          // `finally`, because this resolve BOUND a loopback listener for the
-          // Docker-over-SSH bridge and only dispose closes it. Every failure below is
-          // caught, so the old straight-line dispose looked equivalent — but the whole
-          // block runs under `withTimeout`, and a teardown that exceeds it rejects out of
-          // here from the `await`, past a trailing statement. Fourteen deletes of a service
-          // on a slow box then leak fourteen listeners for the life of the process, which
-          // surfaces as fd exhaustion nowhere near this function.
-          try {
-            await platform.runtime.destroy(containerId).catch((err: unknown) => {
-              console.error(`[SERVICE] Failed to destroy service container ${containerId}:`, err);
+      await (async () => {
+        const { platform } = await resolveServicePlatform(project, dep);
+        // `finally`, because this resolve BOUND a loopback listener for the
+        // Docker-over-SSH bridge and only dispose closes it. Every failure below is
+        // caught, so the old straight-line dispose looked equivalent. `finally`
+        // also closes the Docker-over-SSH bridge on every settled failure.
+        try {
+          await platform.runtime.destroy(containerId).catch((err: unknown) => {
+            console.error(`[SERVICE] Failed to destroy service container ${containerId}:`, err);
+          });
+          // Reclaim this service's built artifact NOW — the FK cascade in
+          // repos.service.remove() below erases the imageRef record, so a later
+          // teardown could never enumerate it. Best-effort; images:gc is the backstop.
+          //
+          // Two shapes, and the `openship/` tag guard answers for only one: a
+          // STATIC sub-app's imageRef is a host DIRECTORY (`/opt/openship/static/…`),
+          // which fails that prefix test, so deleting a static service used to leak
+          // its doc-root with nothing left in the DB to find it by (issue #640's
+          // third door). The tag guard stays for the image case: a base/third-party
+          // image (postgres:16-alpine, redis:7-alpine) is PULLED, shared, and must
+          // never be removed.
+          if (isArtifactRef(serviceDeployment.imageRef)) {
+            await platform.runtime.destroy(serviceDeployment.imageRef!).catch((err: unknown) => {
+              console.error(`[SERVICE] Failed to remove static output for ${svc.name}:`, err);
             });
-            // Reclaim this service's built artifact NOW — the FK cascade in
-            // repos.service.remove() below erases the imageRef record, so a later
-            // teardown could never enumerate it. Best-effort; images:gc is the backstop.
-            //
-            // Two shapes, and the `openship/` tag guard answers for only one: a
-            // STATIC sub-app's imageRef is a host DIRECTORY (`/opt/openship/static/…`),
-            // which fails that prefix test, so deleting a static service used to leak
-            // its doc-root with nothing left in the DB to find it by (issue #640's
-            // third door). The tag guard stays for the image case: a base/third-party
-            // image (postgres:16-alpine, redis:7-alpine) is PULLED, shared, and must
-            // never be removed.
-            if (isArtifactRef(serviceDeployment.imageRef)) {
-              await platform.runtime.destroy(serviceDeployment.imageRef!).catch((err: unknown) => {
-                console.error(`[SERVICE] Failed to remove static output for ${svc.name}:`, err);
-              });
-            } else if (
-              serviceDeployment.imageRef &&
-              ownsBuiltImage(serviceDeployment.imageRef) &&
-              platform.runtime instanceof DockerRuntime
-            ) {
-              await platform.runtime
-                .removeImage(serviceDeployment.imageRef)
-                .catch((err: unknown) => {
-                  console.error(`[SERVICE] Failed to remove image for ${svc.name}:`, err);
-                });
-            }
-          } finally {
-            disposePlatform(platform);
+          } else if (
+            serviceDeployment.imageRef &&
+            ownsBuiltImage(serviceDeployment.imageRef) &&
+            platform.runtime instanceof DockerRuntime
+          ) {
+            await platform.runtime.removeImage(serviceDeployment.imageRef).catch((err: unknown) => {
+              console.error(`[SERVICE] Failed to remove image for ${svc.name}:`, err);
+            });
           }
-        })(),
-        SERVICE_TEARDOWN_TIMEOUT_MS,
-        `runtime teardown timed out for ${svc.name}`,
-      ).catch((err: unknown) => {
+        } finally {
+          disposePlatform(platform);
+        }
+      })().catch((err: unknown) => {
         console.error(`[SERVICE] Runtime teardown skipped for ${svc.name} (best-effort):`, err);
       });
     }
@@ -1200,17 +1181,13 @@ export async function deleteService(ctx: RequestContext, projectId: string, serv
           !project.cloudWorkspaceId && project.activeDeploymentId
             ? await repos.deployment.findById(project.activeDeploymentId)
             : null;
-        await withTimeout(
-          reconcileProjectRoutes(project, {
-            deployment: dep,
-            removes: routes.map((route) => ({
-              hostname: route.hostname,
-              isCustomDomain: route.domainType === "custom",
-            })),
-          }),
-          SERVICE_TEARDOWN_TIMEOUT_MS,
-          `route teardown timed out for ${svc.name}`,
-        );
+        await reconcileProjectRoutes(project, {
+          deployment: dep,
+          removes: routes.map((route) => ({
+            hostname: route.hostname,
+            isCustomDomain: route.domainType === "custom",
+          })),
+        });
       }
     } catch (err) {
       console.error(`[SERVICE] Failed to remove route for ${svc.name}:`, err);
@@ -1222,6 +1199,29 @@ export async function deleteService(ctx: RequestContext, projectId: string, serv
   await repos.domain.deleteByServiceId(serviceId);
 
   await repos.service.remove(serviceId);
+}
+
+export async function deleteService(ctx: RequestContext, projectId: string, serviceId: string) {
+  const { project } = await assertServiceAccess(ctx, projectId, serviceId);
+  // The self-app project's services ARE the Openship stack (api, dashboard, edge,
+  // postgres, redis), linked so the dashboard can show their state, logs and shell.
+  assertNotControlPlane(project);
+
+  const deleted = await withLiveProjectRuntimeMutation(projectId, async (liveProject) => {
+    // Re-read the service under the shared teardown lock. Authorization above is
+    // intentionally outside the lock, while this existence/ownership read closes
+    // a concurrent service delete or project teardown race.
+    const liveService = await repos.service.findById(serviceId);
+    if (!liveService || liveService.projectId !== projectId) {
+      throw new Error("service-not-found");
+    }
+    assertNotControlPlane(liveProject);
+    await deleteLiveService(liveProject, liveService);
+    return true;
+  });
+  if (!deleted) {
+    throw new Error("project-deletion-in-progress");
+  }
 }
 
 // ─── Service Environment Variables ───────────────────────────────────────────

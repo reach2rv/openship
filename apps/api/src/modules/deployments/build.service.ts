@@ -858,11 +858,10 @@ export async function loadDeployment(deploymentId: string) {
 
 /** Throw if the project already has an in-progress deployment. */
 export async function checkNoActiveBuild(projectId: string) {
-  const { rows } = await repos.deployment.listByProject(projectId, {
-    page: 1,
-    perPage: SYSTEM.DEPLOYMENTS.MAX_CONCURRENT_PER_PROJECT + 1,
-  });
-  const active = rows.find((d) => ["queued", "building", "deploying"].includes(d.status));
+  // The exact repository query includes a cancelled/terminal-looking row while
+  // its claimed build worker is still unwinding. Status-only history paging can
+  // neither prove worker completion nor guarantee the active row is on page 1.
+  const [active] = await repos.deployment.listInFlightByProject(projectId);
   if (active) {
     throw new ForbiddenError(
       `A deployment is already in progress (${active.id}). Cancel it first or wait for it to complete.`,
@@ -1563,6 +1562,11 @@ export async function cancelBuildSession(
       ? Math.max(0, Date.now() - new Date(buildSession.startedAt).getTime())
       : 0;
     await repos.deployment.finishBuildSession(buildSession.id, "cancelled", elapsedMs);
+    // If kickoff never acquired the execution lease, there is no worker whose
+    // outer finally can acknowledge completion. Close that session here. The
+    // repo predicate refuses this write when startedAt is non-null, so a real
+    // worker remains visible to teardown until it actually returns.
+    await repos.deployment.acknowledgeUnstartedBuildSession(buildSession.id);
   }
   // Broadcast cancelled AFTER service statuses so UI receives the service updates first
   sessionManager.updateStatus(dep.id, "cancelled");

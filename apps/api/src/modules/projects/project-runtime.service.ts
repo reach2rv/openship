@@ -18,6 +18,7 @@ import { syncManagedEdgeRoutes, edgeUnsyncedWarning } from "../../lib/managed-ed
 import { reconcileServerEdge } from "../../lib/edge-reconcile";
 import { resolveManagedHostname } from "../../lib/routing-domains";
 import { sshManager } from "../../lib/ssh-manager";
+import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import { applyProjectRouting } from "../domains/routing-apply.service";
 import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
 import { deploymentWorkload } from "../deployments/deployment-class";
@@ -25,11 +26,7 @@ import { livePrimaryContainerId } from "../services/service-container";
 
 // ─── Runtime logs ────────────────────────────────────────────────────────────
 
-export async function getRuntimeLogs(
-  projectId: string,
-  organizationId: string,
-  tail?: number,
-) {
+export async function getRuntimeLogs(projectId: string, organizationId: string, tail?: number) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -157,6 +154,19 @@ export async function enableProject(projectId: string, organizationId: string) {
   assertResourceInOrg(p, "Project", organizationId, projectId);
   assertNotControlPlane(p);
 
+  const result = await withLiveProjectRuntimeMutation(projectId, async (liveProject) => {
+    assertResourceInOrg(liveProject, "Project", organizationId, projectId);
+    assertNotControlPlane(liveProject);
+    return enableLiveProject(liveProject, organizationId);
+  });
+  if (!result) throw new NotFoundError("Project", projectId);
+  return result;
+}
+
+/** Enable is a remote runtime/route writer and therefore runs under teardown's lock. */
+async function enableLiveProject(p: ProjectRow, organizationId: string) {
+  const projectId = p.id;
+
   if (!p.activeDeploymentId) {
     throw new ValidationError("No deployment to enable - deploy first");
   }
@@ -220,6 +230,19 @@ export async function disableProject(projectId: string, organizationId: string) 
   // Pausing the control plane means stopping the container that is handling this
   // request — it would answer with a dropped connection, not a result.
   assertNotControlPlane(p);
+
+  const result = await withLiveProjectRuntimeMutation(projectId, async (liveProject) => {
+    assertResourceInOrg(liveProject, "Project", organizationId, projectId);
+    assertNotControlPlane(liveProject);
+    return disableLiveProject(liveProject);
+  });
+  if (!result) throw new NotFoundError("Project", projectId);
+  return result;
+}
+
+/** Disable is a remote runtime/route writer and therefore runs under teardown's lock. */
+async function disableLiveProject(p: ProjectRow) {
+  const projectId = p.id;
 
   if (!p.activeDeploymentId) {
     return { success: true, message: "No active deployment" };
@@ -320,12 +343,31 @@ export async function retryProjectRouting(
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
+  const result = await withLiveProjectRuntimeMutation(projectId, async (liveProject) => {
+    // The first read above is the authorization boundary; this second assertion
+    // protects the callback if ownership changed while it waited for teardown.
+    assertResourceInOrg(liveProject, "Project", organizationId, projectId);
+    return retryLiveProjectRouting(liveProject, organizationId);
+  });
+  return (
+    result ?? {
+      ok: false,
+      warning: "Routing was not retried because the project is being deleted.",
+    }
+  );
+}
+
+/** The complete retry writer, entered only through the shared teardown lock. */
+async function retryLiveProjectRouting(
+  p: ProjectRow,
+  organizationId: string,
+): Promise<{ ok: boolean; warning?: string }> {
+  const projectId = p.id;
+
   // Cloud manages its own ingress — there is no server edge to repair here.
   if (p.cloudWorkspaceId) return { ok: true };
 
-  const dep = p.activeDeploymentId
-    ? await repos.deployment.findById(p.activeDeploymentId)
-    : null;
+  const dep = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
 
   await repairDeploymentServerBinding(p, dep).catch(() => {});
 
@@ -336,7 +378,9 @@ export async function retryProjectRouting(
   // docker exec/config reload calls to sit until the request timeout (#693).
   const edgeRecoveryWarning = await recoverProjectEdge(p, dep);
   if (edgeRecoveryWarning) {
-    const fresh = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
+    const fresh = p.activeDeploymentId
+      ? await repos.deployment.findById(p.activeDeploymentId)
+      : null;
     await markRoutingWarning(fresh, edgeRecoveryWarning).catch(() => {});
     return { ok: false, warning: edgeRecoveryWarning };
   }
@@ -373,8 +417,11 @@ export async function retryProjectRouting(
   if (!ok) return { ok: false, warning: edgeUnsyncedWarning(failures, "retry") };
 
   if (!applyOk) {
-    const warning = "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
-    const fresh = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
+    const warning =
+      "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
+    const fresh = p.activeDeploymentId
+      ? await repos.deployment.findById(p.activeDeploymentId)
+      : null;
     await markRoutingWarning(fresh, warning).catch(() => {});
     return { ok: false, warning };
   }
@@ -386,7 +433,9 @@ export async function retryProjectRouting(
   // opposite of what the operator pressed it to find out.
   const edgeWarning = await edgeServingWarning(p, serverId);
   if (edgeWarning) {
-    const fresh = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
+    const fresh = p.activeDeploymentId
+      ? await repos.deployment.findById(p.activeDeploymentId)
+      : null;
     await markRoutingWarning(fresh, edgeWarning).catch(() => {});
     return { ok: false, warning: edgeWarning };
   }

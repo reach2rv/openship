@@ -55,7 +55,8 @@ export const AUDIT_CATEGORIES = [
   {
     id: "agent",
     label: "AI agents",
-    description: "What connected assistants did over MCP — every tool call, and the scope they hold.",
+    description:
+      "What connected assistants did over MCP — every tool call, and the scope they hold.",
   },
   {
     id: "security",
@@ -165,6 +166,13 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     label: "App deletion refused",
     tone: "warning",
     description: "A delete was refused — something still depends on this app.",
+  },
+  "project.deletion.failed": {
+    category: "apps",
+    action: "failed to delete",
+    label: "App deletion failed",
+    tone: "warning",
+    description: "Cleanup did not complete, so the app record was kept for a safe retry.",
   },
   "project:write": {
     category: "apps",

@@ -31,6 +31,7 @@ const {
     deployment: {
       findById: vi.fn(),
       findInProgressByCommit: vi.fn(),
+      listInFlightByProject: vi.fn(),
       listByProject: vi.fn(),
       getLatestSuccessfulForBranch: vi.fn(),
       create: vi.fn(),
@@ -418,6 +419,7 @@ describe("resolveSnapshotTarget", () => {
 describe("triggerDeployment", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    repos.deployment.listInFlightByProject.mockResolvedValue([]);
 
     repos.project.findById.mockResolvedValue(baseProject());
     repos.project.getEnvMap.mockResolvedValue({});
@@ -920,6 +922,7 @@ describe("triggerDeployment", () => {
 describe("redeployBuildSession environment snapshot", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    repos.deployment.listInFlightByProject.mockResolvedValue([]);
     const project = baseProject({ activeDeploymentId: "dep-old" });
     repos.deployment.findById.mockResolvedValue({
       id: "dep-old",
@@ -996,6 +999,7 @@ describe("requestBuildAccess — folder-upload compose services", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    repos.deployment.listInFlightByProject.mockResolvedValue([]);
 
     // An uploaded folder: no git source, framework detected as docker-compose.
     repos.project.findById.mockResolvedValue(

@@ -742,6 +742,9 @@
       "servesPathRedeploy": "Les nouveaux chemins prennent effet au prochain déploiement.",
       "externalIngress": "Ingress et TLS externes",
       "externalIngressDesc": "Le TLS se termine en amont (Cloudflare Tunnel, équilibreur de charge). Vérification par TXT uniquement — le domaine n'a pas besoin de pointer vers ce serveur, et nous n'émettrons pas de certificat.",
+      "dnsChallenge": "Utiliser le défi DNS-01",
+      "dnsChallengeDesc": "Émettez et renouvelez le certificat via votre fournisseur DNS connecté. Utilisez cette option si le port 80 est inaccessible.",
+      "dnsChallengeWildcardDesc": "Les certificats génériques nécessitent DNS-01 et un fournisseur DNS connecté.",
       "noWww": "Saisissez le domaine sans « www. » — activez « Inclure www » ci-dessous pour l'ajouter."
     },
     "dns": {

@@ -165,7 +165,7 @@ export {
 } from "./runtime/volume-namespace";
 
 // ─── Infrastructure layer ────────────────────────────────────────────────────
-export type { RoutingProvider, SslProvider } from "./infra/types";
+export type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./infra/types";
 export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
 export {
   compileVercelRouting,

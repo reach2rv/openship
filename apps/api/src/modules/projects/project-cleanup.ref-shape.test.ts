@@ -44,6 +44,7 @@ const h = vi.hoisted(() => ({
   resolveErrors: {} as Record<string, Error>,
   keep: { images: new Set<string>(), containers: new Set<string>() },
   removeRoute: vi.fn(async () => {}),
+  releaseManagedHostnames: vi.fn(async () => ({ failures: [] as string[] })),
   convergeClaims: vi.fn(async () => ({
     released: 0,
     retained: [] as Array<{ port: number }>,
@@ -89,7 +90,7 @@ vi.mock("../../lib/routing-domains", () => ({
   buildServiceRouteDomains: () => h.derivedServiceRoutes,
 }));
 vi.mock("../../lib/managed-edge-proxy", () => ({
-  releaseManagedHostnames: vi.fn(async () => ({ failures: [] as string[] })),
+  releaseManagedHostnames: h.releaseManagedHostnames,
 }));
 vi.mock("../../lib/server-reachability", () => ({
   createReachabilityProbe: () => ({ isReachable: h.isReachable }),
@@ -106,6 +107,7 @@ import {
   collectProjectManifest,
   executeCleanup,
   type CleanupManifest,
+  type CleanupRouteContext,
 } from "./project-cleanup.service";
 
 /** A compose static sub-app's doc-root, as written into `service_deployment.image_ref`. */
@@ -244,6 +246,26 @@ describe("collectProjectManifest — a ref is classified by its shape", () => {
     expect(typesOf(manifest, STATIC_RELEASE_DIR)).toEqual(["artifact"]);
   });
 
+  it("fails closed when requested volume discovery cannot be completed", async () => {
+    h.deployments = [deployment({ containerId: "container-with-data" })];
+    vi.mocked(docker.inspectNamedVolumes).mockRejectedValueOnce(new Error("inspect unavailable"));
+
+    await expect(collectProjectManifest(project as never, { wipeVolumes: true })).rejects.toThrow(
+      /inspect volumes deployment failed/i,
+    );
+  });
+
+  it("fails closed when the authoritative labelled-container sweep cannot be read", async () => {
+    h.deployments = [deployment()];
+    vi.mocked(docker.listProjectContainerIds).mockRejectedValueOnce(
+      new Error("daemon unavailable"),
+    );
+
+    await expect(collectProjectManifest(project as never)).rejects.toThrow(
+      /sweep containers p1 failed/i,
+    );
+  });
+
   it("keeps identical artifact refs distinct across historical server targets", async () => {
     h.deployments = [
       deployment({ id: "dep_a", imageRef: STATIC_BUILD_DIR }),
@@ -280,28 +302,52 @@ describe("collectProjectManifest — a ref is classified by its shape", () => {
     expect(artifacts.every((resource) => resource.runtimeMode === "docker")).toBe(true);
   });
 
-  it("carries an unreachable historical server as a deferred route target", async () => {
+  it("carries an unreachable historical server as one durable target sweep", async () => {
     h.deployments = [
       deployment({
         id: "dep_remote",
         containerId: "remote-container",
+        imageRef: IMAGE_TAG,
         meta: { serverId: "server-remote", runtimeMode: "bare" },
       }),
     ];
+    h.serviceRows.dep_remote = [serviceRow({ imageRef: STATIC_BUILD_DIR })];
     h.isReachable.mockResolvedValueOnce(false);
-    h.getServer.mockResolvedValueOnce({ id: "server-remote" });
+    h.getServer.mockResolvedValueOnce({
+      id: "server-remote",
+      isLocal: false,
+      sshHost: "remote.example.com",
+      sshPort: 22,
+      sshJumpHost: null,
+      sshArgs: null,
+    });
 
-    const manifest = await collectProjectManifest(project as never);
+    const manifest = await collectProjectManifest(project as never, { wipeVolumes: true });
 
     expect(manifest.unreachableRouteTargets).toEqual([
-      { serverId: "server-remote", runtimeMode: "bare" },
+      {
+        serverId: "server-remote",
+        runtimeMode: "bare",
+        targetKey: expect.stringMatching(/^host:[0-9a-f]{64}$/),
+      },
     ]);
+    const targetKey = manifest.unreachableRouteTargets?.[0]?.targetKey;
     expect(manifest.resources).toContainEqual(
       expect.objectContaining({
         type: "unreachable",
-        ref: "remote-container",
+        deferredResourceType: "project_target_sweep",
+        ref: "p1",
         serverId: "server-remote",
+        targetKey,
         runtimeMode: "bare",
+        payload: {
+          slug: "app",
+          wipeVolumes: true,
+          containerIds: ["remote-container"],
+          imageRefs: [IMAGE_TAG],
+          artifactRefs: [STATIC_BUILD_DIR],
+          volumeNames: [],
+        },
       }),
     );
   });
@@ -408,6 +454,102 @@ describe("executeCleanup — the resource type selects the verb", () => {
     );
   });
 
+  it("attempts every route target and reports all target failures", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = vi.fn(async () => {
+        throw new Error("source edge unavailable");
+      });
+      const second = vi.fn(async () => {
+        throw new Error("destination reload failed");
+      });
+      const manifest: CleanupManifest = {
+        projectId: "p1",
+        organizationId: "org1",
+        resources: [
+          { type: "route", ref: "app.opsh.io", label: "route app.opsh.io", runtime: null },
+        ],
+        routeContexts: [
+          {
+            key: "host:source",
+            routing: { removeRoute: first } as never,
+            hostPortTarget: {
+              targetKey: `host:${"c".repeat(64)}`,
+              legacyTargetKeys: [],
+              stable: true,
+            },
+            serverId: "server-source",
+            runtimeMode: "docker",
+            edgeProxy: { listLoopbackUpstreamPortsStrict: vi.fn(async () => new Set<number>()) },
+          },
+          {
+            key: "host:destination",
+            routing: { removeRoute: second } as never,
+            hostPortTarget: {
+              targetKey: `host:${"d".repeat(64)}`,
+              legacyTargetKeys: [],
+              stable: true,
+            },
+            serverId: "server-destination",
+            runtimeMode: "docker",
+            edgeProxy: { listLoopbackUpstreamPortsStrict: vi.fn(async () => new Set<number>()) },
+          },
+        ],
+      };
+
+      const pending = executeCleanup(manifest);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      // The resource retry is still bounded to one attempt, but a failure on the
+      // first target never prevents the later target from being attempted.
+      expect(first).toHaveBeenCalledTimes(2);
+      expect(second).toHaveBeenCalledTimes(2);
+      expect(result.failed).toEqual([
+        expect.objectContaining({
+          ref: "app.opsh.io",
+          type: "route",
+          error: expect.stringContaining("host:source: source edge unavailable"),
+        }),
+      ]);
+      expect(result.failed[0]?.error).toContain("host:destination: destination reload failed");
+      expect(h.releaseManagedHostnames).not.toHaveBeenCalled();
+      expect(h.convergeClaims).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("finishes containers before starting volume and network cleanup", async () => {
+    let releaseContainer!: () => void;
+    const containerDone = new Promise<void>((resolve) => {
+      releaseContainer = resolve;
+    });
+    vi.mocked(docker.destroy).mockImplementationOnce(() => containerDone);
+
+    const pending = executeCleanup({
+      projectId: "p1",
+      resources: [
+        { type: "container", ref: "container-1", label: "container", runtime: docker },
+        { type: "volume", ref: "volume-1", label: "volume", runtime: docker },
+        { type: "network", ref: "network-1", label: "network", runtime: docker },
+      ],
+    });
+    await Promise.resolve();
+
+    expect(docker.destroy).toHaveBeenCalledWith("container-1");
+    expect(docker.removeVolume).not.toHaveBeenCalled();
+    expect(docker.removeNetwork).not.toHaveBeenCalled();
+
+    releaseContainer();
+    await expect(pending).resolves.toMatchObject({ failed: [] });
+    expect(docker.removeVolume).toHaveBeenCalledWith("volume-1");
+    expect(docker.removeNetwork).toHaveBeenCalledWith("network-1");
+    expect(vi.mocked(docker.removeVolume).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(docker.removeNetwork).mock.invocationCallOrder[0]!,
+    );
+  });
+
   it("keeps cleanup incomplete while the target edge still protects a project claim", async () => {
     h.convergeClaims.mockResolvedValueOnce({
       released: 0,
@@ -485,7 +627,13 @@ describe("executeCleanup — the resource type selects the verb", () => {
         { type: "route", ref: "app.example.com", label: "route app.example.com", runtime: null },
       ],
       routeContexts: [],
-      unreachableRouteTargets: [{ serverId: "server-remote", runtimeMode: "docker" }],
+      unreachableRouteTargets: [
+        {
+          serverId: "server-remote",
+          runtimeMode: "docker",
+          targetKey: "server:server-remote",
+        },
+      ],
     };
 
     const result = await executeCleanup(manifest);

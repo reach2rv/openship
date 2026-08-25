@@ -13,7 +13,7 @@
  * modules/jobs/job.registry.ts).
  */
 
-import { repos, type OrphanedResource } from "@repo/db";
+import { repos, tryAcquireAdvisoryLock, type OrphanedResource } from "@repo/db";
 import {
   DockerRuntime,
   edgeProxyFor,
@@ -27,6 +27,113 @@ import { isConnectionLoss } from "../../lib/remote-state";
 import { disposePlatform, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
 import { convergeTargetHostPortClaims } from "../deployments/pinned-host-ports";
 import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
+import { connectionHostPortTargetKey } from "../../lib/host-port-target";
+
+interface ProjectTargetSweepPayload {
+  slug: string;
+  wipeVolumes: boolean;
+  containerIds: string[];
+  imageRefs: string[];
+  artifactRefs: string[];
+  volumeNames: string[];
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is string => typeof item === "string" && !!item))];
+}
+
+function readProjectTargetSweep(o: OrphanedResource): ProjectTargetSweepPayload {
+  const payload = o.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("project target sweep has no cleanup payload");
+  }
+  const values = payload as Record<string, unknown>;
+  if (typeof values.slug !== "string" || !values.slug.trim()) {
+    throw new Error("project target sweep has no project slug");
+  }
+  if (typeof values.wipeVolumes !== "boolean") {
+    throw new Error("project target sweep has no volume-cleanup intent");
+  }
+  return {
+    slug: values.slug,
+    wipeVolumes: values.wipeVolumes,
+    containerIds: stringArray(values.containerIds),
+    imageRefs: stringArray(values.imageRefs),
+    artifactRefs: stringArray(values.artifactRefs),
+    volumeNames: stringArray(values.volumeNames),
+  };
+}
+
+async function ignoreRuntimeNotFound(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (err) {
+    if (!isRuntimeNotFoundError(err)) throw err;
+  }
+}
+
+/**
+ * Replay a project-wide cleanup once an unreachable target returns.
+ *
+ * The payload preserves DB-known refs, while Docker's label scans recover
+ * resources created just before a crash. Volume mounts are inventoried before
+ * any container is removed, and later phases run only after earlier ones have
+ * fully settled. Keeping this as one durable orphan makes partial retries
+ * idempotent without pretending the project id itself is a container id.
+ */
+async function destroyProjectTargetSweep(platform: Platform, o: OrphanedResource): Promise<void> {
+  if (!o.projectId) throw new Error("project target sweep has no project identity");
+  const payload = readProjectTargetSweep(o);
+  const runtime = platform.runtime;
+
+  if (!(runtime instanceof DockerRuntime)) {
+    if (o.runtimeMode !== "bare" || runtime.name !== "bare") {
+      throw new Error(`project target sweep resolved an unexpected ${runtime.name} runtime`);
+    }
+    for (const ref of [...new Set([...payload.containerIds, ...payload.artifactRefs])]) {
+      await ignoreRuntimeNotFound(() => runtime.destroy(ref));
+    }
+    return;
+  }
+
+  const discoveredContainerIds = await runtime.listProjectContainerIds(o.projectId);
+  const containerIds = [...new Set([...payload.containerIds, ...discoveredContainerIds])];
+  const volumeNames = new Set(payload.volumeNames);
+  if (payload.wipeVolumes) {
+    // Do every inspect first: after even one container is removed, its mount
+    // metadata is gone and an interrupted replay could no longer honor the wipe.
+    for (const containerId of containerIds) {
+      for (const volume of await runtime.inspectNamedVolumes(containerId)) {
+        volumeNames.add(volume);
+      }
+    }
+    // The mount list disappears with the container. Commit it before the first
+    // destroy so a process crash or transport loss can resume the volume phase.
+    await repos.orphanedResource.updatePayload(o.id, {
+      ...payload,
+      volumeNames: [...volumeNames],
+    });
+  }
+
+  for (const containerId of containerIds) {
+    await ignoreRuntimeNotFound(() => runtime.destroy(containerId));
+  }
+  for (const artifactRef of payload.artifactRefs) {
+    await ignoreRuntimeNotFound(() => runtime.destroy(artifactRef));
+  }
+  for (const volumeName of volumeNames) {
+    await ignoreRuntimeNotFound(() => runtime.removeVolume(volumeName));
+  }
+
+  const discoveredImages = await runtime.listProjectImages(o.projectId);
+  const imageRefs = new Set(payload.imageRefs.filter(ownsBuiltImage));
+  for (const image of discoveredImages) imageRefs.add(image.repoTags[0] ?? image.id);
+  for (const imageRef of imageRefs) {
+    await ignoreRuntimeNotFound(() => runtime.removeImage(imageRef));
+  }
+  await ignoreRuntimeNotFound(() => runtime.removeNetwork(payload.slug));
+}
 
 /** Destroy one orphaned resource via the right adapter op; not-found = done. */
 async function destroyOrphanResource(platform: Platform, o: OrphanedResource): Promise<void> {
@@ -52,8 +159,15 @@ async function destroyOrphanResource(platform: Platform, o: OrphanedResource): P
       case "network":
         if (runtime instanceof DockerRuntime) await runtime.removeNetwork(o.ref);
         return;
+      case "project_target_sweep":
+        await destroyProjectTargetSweep(platform, o);
+        return;
       case "route":
         await platform.routing.removeRoute(o.ref);
+        return;
+      case "host_port_claims":
+        // No host object to destroy. `reclaimOrphan` converges the target's
+        // durable claims after all workload orphans on that target are gone.
         return;
       default:
         return;
@@ -62,6 +176,45 @@ async function destroyOrphanResource(platform: Platform, o: OrphanedResource): P
     // Already gone on the host → the orphan is reclaimed; treat as success.
     if (isRuntimeNotFoundError(err)) return;
     throw err;
+  }
+}
+
+function convergesHostPortClaims(resourceType: string): boolean {
+  return resourceType === "route" || resourceType === "host_port_claims";
+}
+
+async function assertOrphanTargetStillMatches(
+  o: OrphanedResource,
+  resolved: Awaited<ReturnType<typeof resolveDeploymentPlatform>>,
+): Promise<void> {
+  const stored = o.targetKey;
+  // `server:<id>` is the legacy, mutable format. It cannot prove physical
+  // identity, but retaining compatibility is safer than making old rows
+  // permanently unreclaimable. Every newly-created row uses local/host:<sha>.
+  if (!stored || (stored !== "local" && !stored.startsWith("host:"))) return;
+
+  const candidates = new Set<string>();
+  if (resolved.hostPortTarget?.targetKey) candidates.add(resolved.hostPortTarget.targetKey);
+  if (candidates.has(stored)) return;
+  if (o.serverId) {
+    const server = await repos.server.getInOrganization(o.serverId, o.organizationId);
+    if (server) {
+      candidates.add(
+        server.isLocal
+          ? "local"
+          : connectionHostPortTargetKey({
+              sshHost: server.sshHost,
+              sshPort: server.sshPort,
+              sshJumpHost: server.sshJumpHost,
+              sshArgs: server.sshArgs,
+            }),
+      );
+    }
+  }
+  if (!candidates.has(stored)) {
+    throw new Error(
+      `deferred cleanup target changed (stored ${stored}; current ${[...candidates].join(", ") || "unknown"})`,
+    );
   }
 }
 
@@ -123,9 +276,19 @@ async function reclaimOrphan(
     { organizationId: o.organizationId },
   );
   try {
+    await assertOrphanTargetStillMatches(o, resolved);
+    if (
+      convergesHostPortClaims(o.resourceType) &&
+      o.projectId &&
+      (!resolved.hostPortTarget || !resolved.platform.executor)
+    ) {
+      throw new Error(
+        `cannot reclaim ${o.resourceType}: target identity or executor is unavailable`,
+      );
+    }
     await destroyOrphanResource(resolved.platform, o);
     if (
-      o.resourceType === "route" &&
+      convergesHostPortClaims(o.resourceType) &&
       o.projectId &&
       resolved.hostPortTarget &&
       resolved.platform.executor
@@ -148,13 +311,26 @@ async function reclaimOrphan(
         );
       }
     }
+    if (o.resourceType === "route") {
+      // Force-orphan fans a route out to its physical server targets. The
+      // managed *.opsh.io registration is global rather than tied to one of
+      // those targets, but it must still be released before the last durable
+      // retry record can disappear. The operation is namespace-scoped and
+      // idempotent, so each target row may safely enforce the same invariant.
+      const { failures } = await releaseManagedHostnames([o.ref], {
+        organizationId: o.organizationId,
+      });
+      if (failures.length > 0) {
+        throw new Error(`Cloud edge route not released: ${failures.join(", ")}`);
+      }
+    }
     return true;
   } finally {
     disposePlatform(resolved);
   }
 }
 
-export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: number }> {
+async function runOrphanSweepLocked(): Promise<{ reclaimed: number; deferred: number }> {
   const orphans = await repos.orphanedResource.listAll();
   if (orphans.length === 0) return { reclaimed: 0, deferred: 0 };
 
@@ -166,11 +342,12 @@ export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: n
       ? [
           orphan.organizationId,
           orphan.projectId,
-          orphan.serverId
-            ? `server:${orphan.serverId}`
-            : orphan.runtimeMode === "cloud" || !orphan.runtimeMode
-              ? "cloud"
-              : "local",
+          orphan.targetKey ??
+            (orphan.serverId
+              ? `server:${orphan.serverId}`
+              : orphan.runtimeMode === "cloud" || !orphan.runtimeMode
+                ? "cloud"
+                : "local"),
         ].join("\0")
       : null;
   // A route disappearance proves only that the edge stopped dialling a port; it
@@ -181,7 +358,7 @@ export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: n
   const pendingResourcesByTarget = new Map<string, number>();
   for (const orphan of orphans) {
     const key = targetGroupKey(orphan);
-    if (!key || orphan.resourceType === "route") continue;
+    if (!key || convergesHostPortClaims(orphan.resourceType)) continue;
     pendingResourcesByTarget.set(key, (pendingResourcesByTarget.get(key) ?? 0) + 1);
   }
 
@@ -196,9 +373,18 @@ export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: n
         deferred++;
         continue;
       }
+      // Route orphan rows reserve their hostname until every physical/global
+      // cleanup step succeeds. This is defense-in-depth for legacy rows and any
+      // caller that bypassed the repository's post-insert reservation check:
+      // never remove a vhost now owned by a live domain.
+      if (o.resourceType === "route" && (await repos.domain.findByHostname(o.ref))) {
+        await repos.orphanedResource.bumpAttempt(o.id);
+        deferred++;
+        continue;
+      }
       const groupKey = targetGroupKey(o);
       if (
-        o.resourceType === "route" &&
+        convergesHostPortClaims(o.resourceType) &&
         groupKey &&
         (pendingResourcesByTarget.get(groupKey) ?? 0) > 0
       ) {
@@ -208,7 +394,7 @@ export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: n
       }
       if (await reclaimOrphan(o, probe)) {
         await repos.orphanedResource.delete(o.id);
-        if (groupKey && o.resourceType !== "route") {
+        if (groupKey && !convergesHostPortClaims(o.resourceType)) {
           pendingResourcesByTarget.set(
             groupKey,
             Math.max(0, (pendingResourcesByTarget.get(groupKey) ?? 1) - 1),
@@ -227,4 +413,26 @@ export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: n
   }
 
   return { reclaimed, deferred };
+}
+
+// The scheduler's wall-clock timeout cannot cancel an SSH/Docker mutation. Keep
+// one real sweep alive until its work settles and make overlapping ticks skip,
+// instead of letting a late first sweep race hostname reuse or a second cleanup.
+let sweepInProgress = false;
+
+export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: number }> {
+  if (sweepInProgress) return { reclaimed: 0, deferred: 0 };
+  sweepInProgress = true;
+  let lock: Awaited<ReturnType<typeof tryAcquireAdvisoryLock>> = null;
+  try {
+    lock = await tryAcquireAdvisoryLock("projects:orphan-gc");
+    if (!lock) return { reclaimed: 0, deferred: 0 };
+    return await runOrphanSweepLocked();
+  } finally {
+    try {
+      await lock?.release();
+    } finally {
+      sweepInProgress = false;
+    }
+  }
 }

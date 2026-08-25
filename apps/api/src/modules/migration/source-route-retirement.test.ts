@@ -200,4 +200,175 @@ describe("interrupted project-move cutover recovery", () => {
       listInFlight.mockRestore();
     },
   );
+
+  it("parks an interrupted resume again instead of tearing down its live target", async () => {
+    const run = {
+      id: "migration-resume",
+      status: "moving_data",
+      mode: "project_move",
+      projectId: "project-1",
+      organizationId: "org-1",
+      sourceServerId: "source-server",
+      targetServerId: "target-server",
+      pendingItems: [],
+      executionStartedAt: new Date(),
+      executionFinishedAt: null,
+    };
+    const listInFlight = vi
+      .spyOn(repos.dockerMigrationRun, "listInFlight")
+      .mockResolvedValue([run] as never);
+    const transition = vi
+      .spyOn(repos.dockerMigrationRun, "transition")
+      .mockResolvedValue(undefined as never);
+    const acknowledge = vi
+      .spyOn(repos.dockerMigrationRun, "acknowledgeExecutionFinished")
+      .mockResolvedValue(undefined as never);
+    const internals = migrationOrchestrator as unknown as {
+      teardownTargetAndRestoreSource: () => Promise<void>;
+    };
+    const teardown = vi
+      .spyOn(internals, "teardownTargetAndRestoreSource")
+      .mockResolvedValue(undefined);
+
+    await migrationOrchestrator.recoverInterruptedMigrations();
+
+    expect(transition).toHaveBeenCalledWith("migration-resume", "partial", {
+      errorMessage: "Resume was interrupted — review pending paths and retry.",
+    });
+    expect(acknowledge).toHaveBeenCalledWith("migration-resume");
+    expect(teardown).not.toHaveBeenCalled();
+
+    teardown.mockRestore();
+    acknowledge.mockRestore();
+    transition.mockRestore();
+    listInFlight.mockRestore();
+  });
+
+  it("keeps an interrupted cutover retryable when source cleanup is still unreachable", async () => {
+    const run = {
+      id: "migration-cutover-failed",
+      status: "cutover",
+      mode: "project_move",
+      projectId: "project-1",
+      organizationId: "org-1",
+      sourceServerId: "source-server",
+      targetServerId: "target-server",
+      scannedContainerIds: { web: "container-1" },
+      executionStartedAt: new Date(),
+      executionFinishedAt: null,
+    };
+    const listInFlight = vi
+      .spyOn(repos.dockerMigrationRun, "listInFlight")
+      .mockResolvedValue([run] as never);
+    const transition = vi
+      .spyOn(repos.dockerMigrationRun, "transition")
+      .mockResolvedValue(undefined as never);
+    const acknowledge = vi
+      .spyOn(repos.dockerMigrationRun, "acknowledgeExecutionFinished")
+      .mockResolvedValue(undefined as never);
+    const internals = migrationOrchestrator as unknown as {
+      cutover: () => Promise<{ failed: [] }>;
+      retireSourceRoutes: () => Promise<void>;
+    };
+    const cutover = vi.spyOn(internals, "cutover").mockRejectedValue(new Error("host lost"));
+    const retireRoutes = vi.spyOn(internals, "retireSourceRoutes").mockResolvedValue(undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await migrationOrchestrator.recoverInterruptedMigrations();
+
+    expect(transition).toHaveBeenCalledWith(
+      "migration-cutover-failed",
+      "cutover",
+      expect.objectContaining({ errorMessage: expect.stringContaining("host lost") }),
+    );
+    expect(transition).not.toHaveBeenCalledWith("migration-cutover-failed", "succeeded");
+    expect(retireRoutes).not.toHaveBeenCalled();
+    expect(acknowledge).toHaveBeenCalledWith("migration-cutover-failed");
+
+    warn.mockRestore();
+    retireRoutes.mockRestore();
+    cutover.mockRestore();
+    acknowledge.mockRestore();
+    transition.mockRestore();
+    listInFlight.mockRestore();
+  });
+});
+
+describe("cutover execution claim", () => {
+  it("keeps a failed destructive claim retryable and acknowledges every attempt", async () => {
+    const initial = {
+      id: "migration-claim",
+      status: "awaiting_cutover",
+      mode: "cross_server",
+      projectId: "project-1",
+      organizationId: "org-1",
+      sourceServerId: "source-server",
+      targetServerId: "target-server",
+      scannedContainerIds: { web: "container-1" },
+      confirmationToken: "token-1",
+    };
+    const claimed = {
+      ...initial,
+      status: "cutover",
+      executionStartedAt: new Date(),
+      executionFinishedAt: null,
+    };
+    const find = vi.spyOn(repos.dockerMigrationRun, "findById").mockResolvedValue(initial as never);
+    const claim = vi
+      .spyOn(repos.dockerMigrationRun, "claimExecution")
+      .mockResolvedValue(claimed as never);
+    const acknowledge = vi
+      .spyOn(repos.dockerMigrationRun, "acknowledgeExecutionFinished")
+      .mockResolvedValue(undefined as never);
+    const transition = vi
+      .spyOn(repos.dockerMigrationRun, "transition")
+      .mockResolvedValue(undefined as never);
+    const internals = migrationOrchestrator as unknown as {
+      cutover: () => Promise<{ failed: [] }>;
+    };
+    const cutover = vi
+      .spyOn(internals, "cutover")
+      .mockRejectedValueOnce(new Error("host lost"))
+      .mockResolvedValueOnce({ failed: [] });
+
+    await expect(
+      migrationOrchestrator.resolveCutover("migration-claim", "org-1", "token-1", true),
+    ).rejects.toThrow("host lost");
+
+    find.mockResolvedValueOnce({
+      ...claimed,
+      executionFinishedAt: new Date(),
+      errorMessage: "Cutover incomplete",
+    } as never);
+    await expect(
+      migrationOrchestrator.resolveCutover("migration-claim", "org-1", "token-1", true),
+    ).resolves.toEqual({ ok: true, leftBehind: [] });
+
+    expect(claim).toHaveBeenNthCalledWith(1, {
+      id: "migration-claim",
+      organizationId: "org-1",
+      from: "awaiting_cutover",
+      to: "cutover",
+    });
+    expect(claim).toHaveBeenNthCalledWith(2, {
+      id: "migration-claim",
+      organizationId: "org-1",
+      from: "cutover",
+      to: "cutover",
+    });
+    expect(cutover).toHaveBeenCalledTimes(2);
+    expect(transition).toHaveBeenCalledWith(
+      "migration-claim",
+      "cutover",
+      expect.objectContaining({ errorMessage: expect.stringContaining("host lost") }),
+    );
+    expect(transition).toHaveBeenCalledWith("migration-claim", "succeeded", undefined);
+    expect(acknowledge).toHaveBeenCalledTimes(2);
+
+    cutover.mockRestore();
+    transition.mockRestore();
+    acknowledge.mockRestore();
+    claim.mockRestore();
+    find.mockRestore();
+  });
 });

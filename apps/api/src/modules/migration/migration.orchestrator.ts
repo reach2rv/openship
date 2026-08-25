@@ -523,6 +523,11 @@ class MigrationOrchestratorImpl {
         // `failed` run re-opened pre-filled (edit & retry).
         inputSnapshot: input as unknown as Record<string, unknown>,
       });
+      if (!run) {
+        throw new Error(
+          "The project is being deleted, so this migration can no longer be started.",
+        );
+      }
       setImmediate(() => {
         void this.run(ctx, run.id, input).catch((err) =>
           console.error(`[migration] ${run.id} crashed:`, safeErrorMessage(err)),
@@ -800,7 +805,18 @@ class MigrationOrchestratorImpl {
       const rowVolumeStrategies: Record<string, VolumeStrategy> = Object.fromEntries(
         chosen.map((s) => [rowNameOf(s), perService(input.volumeStrategies, s) ?? "reuse"]),
       );
-      await this.transition(id, "adopting", { projectId, scannedContainerIds });
+      // A scan/adopt run did not have a project at enqueue time, and a copy has
+      // just minted a new target project. Bind the durable run through the same
+      // project-row admission lock before any later stop/copy/deploy work. If a
+      // concurrent delete claimed the new row first, rollback restores the
+      // source and this worker never proceeds under an untracked project.
+      const bound = await repos.dockerMigrationRun.bindProject(id, projectId, organizationId, {
+        scannedContainerIds,
+      });
+      if (!bound) {
+        throw new Error("The migration project is being deleted; aborting before data movement.");
+      }
+      await this.transition(id, "adopting", { scannedContainerIds });
 
       // Link the repo (if the user picked one) BEFORE deploy so source + push
       // auto-deploy are bound from the first release. Best-effort: adopted rows
@@ -2566,7 +2582,8 @@ class MigrationOrchestratorImpl {
   }
 
   /** Confirm the destructive cutover (or finish keeping the originals stopped).
-   *  Timing-safe token compare. Only valid from `awaiting_cutover`. */
+   *  A failed destructive attempt remains `cutover` and may retry only the same
+   *  irreversible choice. Timing-safe token compare on every attempt. */
   async resolveCutover(
     id: string,
     organizationId: string,
@@ -2579,11 +2596,18 @@ class MigrationOrchestratorImpl {
     if (!run || run.organizationId !== organizationId) {
       return { ok: false, status: 404, error: "Migration not found" };
     }
-    if (run.status !== "awaiting_cutover") {
+    if (run.status !== "awaiting_cutover" && run.status !== "cutover") {
       return {
         ok: false,
         status: 409,
-        error: `Migration is not awaiting cutover (status: ${run.status})`,
+        error: `Migration is not awaiting or retrying cutover (status: ${run.status})`,
+      };
+    }
+    if (run.status === "cutover" && !kill) {
+      return {
+        ok: false,
+        status: 409,
+        error: "Source removal already started; retry with kill=true to finish cutover",
       };
     }
     const expected = Buffer.from(run.confirmationToken ?? "");
@@ -2592,59 +2616,79 @@ class MigrationOrchestratorImpl {
       return { ok: false, status: 403, error: "Invalid confirmation token" };
     }
 
-    const leftBehind: LeftBehindContainer[] = [];
-    if (kill && run.sourceServerId) {
-      await this.transition(id, "cutover");
-      const { failed } = await this.cutover(
-        run.sourceServerId,
-        organizationId,
-        (run.scannedContainerIds ?? {}) as Record<string, string>,
-      );
-      leftBehind.push(...failed);
-      const remainder = describeCutoverRemainder(failed);
-      if (remainder) this.appendLog(id, `cutover: ${remainder}`);
-      // A project move also has to leave the OLD EDGE. Door A never needs this: an
-      // adopted stack sat behind the operator's own proxy, which the migration
-      // deliberately never touches. Ours was served by Openship's edge on the source,
-      // and destroying a container does not remove the vhost pointing at it — so the old
-      // server would keep answering for the project's domains with a 502, which is worse
-      // than not answering, and would silently win for as long as DNS still resolves
-      // there (or anyone hits that IP directly).
-      if (run.mode === "project_move" && run.projectId) {
-        await this.retireSourceRoutes(
-          run.projectId,
-          run.sourceServerId,
+    // The HTTP precheck above protects the token; the DB claim below owns the
+    // state transition and project-deletion admission atomically. Keeping the
+    // status parked for a non-destructive "keep" is intentional: boot recovery
+    // must never infer that source destruction was requested.
+    const claimed = await repos.dockerMigrationRun.claimExecution({
+      id,
+      organizationId,
+      from: run.status,
+      to: kill ? "cutover" : "awaiting_cutover",
+    });
+    if (!claimed) {
+      return {
+        ok: false,
+        status: 409,
+        error: "Migration state changed or one of its projects is being deleted",
+      };
+    }
+
+    try {
+      const leftBehind: LeftBehindContainer[] = [];
+      if (kill && claimed.sourceServerId) {
+        const { failed } = await this.cutover(
+          claimed.sourceServerId,
           organizationId,
-          failed.length === 0,
+          (claimed.scannedContainerIds ?? {}) as Record<string, string>,
+        );
+        leftBehind.push(...failed);
+        const remainder = describeCutoverRemainder(failed);
+        if (remainder) this.appendLog(id, `cutover: ${remainder}`);
+        // A project move also has to leave the OLD EDGE. Door A never needs this: an
+        // adopted stack sat behind the operator's own proxy, which the migration
+        // deliberately never touches. Ours was served by Openship's edge on the source,
+        // and destroying a container does not remove the vhost pointing at it.
+        if (claimed.mode === "project_move" && claimed.projectId) {
+          await this.retireSourceRoutes(
+            claimed.projectId,
+            claimed.sourceServerId,
+            organizationId,
+            failed.length === 0,
+          );
+        }
+      } else if (
+        !kill &&
+        claimed.sourceServerId &&
+        claimed.sourceServerId !== claimed.targetServerId &&
+        // A project move's originals must stay stopped; restarting them would
+        // make one project's writable data live on two servers.
+        claimed.mode !== "project_move"
+      ) {
+        await this.restartSourceOriginals(
+          claimed.sourceServerId,
+          organizationId,
+          (claimed.scannedContainerIds ?? {}) as Record<string, string>,
         );
       }
-    } else if (
-      !kill &&
-      run.sourceServerId &&
-      run.sourceServerId !== run.targetServerId &&
-      // A PROJECT MOVE's originals stay stopped. For an adopted stack "keep" means the
-      // old server becomes a live standby, which is safe because those containers were
-      // never Openship's. Here they ARE this project's: the row now names the target, so
-      // restarting them would leave ONE project live on TWO servers — two copies of the
-      // same volumes diverging, both still answering for the same domain from the source's
-      // edge. Kept-but-stopped is a rollback point; kept-and-running is a split brain.
-      run.mode !== "project_move"
-    ) {
-      // Keep + cross-server: moveData quiesced the source for a consistent copy,
-      // so bring the originals back UP — the old server returns to running as a
-      // live standby until the user manually cleans it up (nothing is removed).
-      // Same-server keep leaves them stopped: the target now holds the same
-      // ports/volumes, so both can't run at once.
-      await this.restartSourceOriginals(
-        run.sourceServerId,
-        organizationId,
-        (run.scannedContainerIds ?? {}) as Record<string, string>,
-      );
+      await this.transition(id, "succeeded");
+      // Reported, not swallowed: the caller shows any source containers that
+      // could not be retired. Empty is the normal fully-clean result.
+      return { ok: true, leftBehind };
+    } catch (err) {
+      // Destructive intent is irreversible: some originals/routes may already
+      // be gone. Keep `cutover`, record why it parked, and allow only kill=true
+      // to claim a later idempotent retry.
+      await this.transition(id, "cutover", {
+        errorMessage: `Cutover incomplete — retry source cleanup: ${safeErrorMessage(err)}`.slice(
+          0,
+          4096,
+        ),
+      }).catch(() => {});
+      throw err;
+    } finally {
+      await repos.dockerMigrationRun.acknowledgeExecutionFinished(id);
     }
-    await this.transition(id, "succeeded");
-    // Reported, not swallowed: the caller shows the operator that the old server still has
-    // containers on it. An empty list is the normal, fully-clean case.
-    return { ok: true, leftBehind };
   }
 
   /**
@@ -2674,12 +2718,33 @@ class MigrationOrchestratorImpl {
     if (!run.sourceServerId || !run.targetServerId) {
       return { ok: false, status: 409, error: "Source/target server is no longer available" };
     }
-    // Flip out of `partial` first (guards a concurrent resume), then run async.
-    await this.transition(id, "moving_data");
+    const claimed = await repos.dockerMigrationRun.claimExecution({
+      id,
+      organizationId,
+      from: "partial",
+      to: "moving_data",
+    });
+    if (!claimed) {
+      return {
+        ok: false,
+        status: 409,
+        error: "Migration state changed or one of its projects is being deleted",
+      };
+    }
+
+    // The durable claim above, not process-local scheduling, guards duplicate
+    // deliveries across API replicas and survives a crash between this response
+    // and the callback starting.
     setImmediate(() => {
-      void this.runResume(ctx, run, organizationId, opts).catch((err) =>
-        console.error(`[migration] resume ${id} crashed:`, safeErrorMessage(err)),
-      );
+      void (async () => {
+        try {
+          await this.runResume(ctx, claimed, organizationId, opts);
+        } catch (err) {
+          console.error(`[migration] resume ${id} crashed:`, safeErrorMessage(err));
+        } finally {
+          await repos.dockerMigrationRun.acknowledgeExecutionFinished(id);
+        }
+      })();
     });
     return { ok: true };
   }
@@ -2935,12 +3000,29 @@ class MigrationOrchestratorImpl {
       deploymentId,
     );
 
+    // Undo what the run did to the TARGET and to the project's own record. Shared with boot
+    // recovery, which used to skip both — see `undoTargetSideEffects`.
+    await this.undoTargetSideEffects(
+      await repos.dockerMigrationRun.findById(id).catch(() => null),
+      servers,
+      ctx.organizationId,
+      (m) => this.appendLog(id, m),
+    );
+
+    await this.transition(id, "rolled_back", {
+      errorMessage: errorMessage.slice(0, 4096),
+    });
+
     // A failed migration must not leave the draft project it created behind.
     // Only projects THIS run created are dropped (never a pre-existing one the
-    // user already had). Reuse the canonical teardown (force = cancel the
-    // in-flight/timed-out deploy first, then drop rows) so no divergent delete
-    // path — but never wipe volumes (the reused originals hold production data),
-    // and never let a cleanup hiccup mask the real migration error.
+    // user already had). This MUST run after the migration is terminal: project
+    // teardown now correctly treats this run as active work, so invoking it
+    // while this sole worker is still `adopting`/`deploying` would ask the run to
+    // cancel itself and then deadlock waiting for its own terminal transition.
+    //
+    // All source/target migration effects are already undone above. The final
+    // draft cleanup is protected by the draft project's own deletion lock, and
+    // a cleanup hiccup must never mask the real migration error.
     if (createdProjectId) {
       try {
         await teardownProject(ctx, createdProjectId, {
@@ -2955,19 +3037,6 @@ class MigrationOrchestratorImpl {
         );
       }
     }
-
-    // Undo what the run did to the TARGET and to the project's own record. Shared with boot
-    // recovery, which used to skip both — see `undoTargetSideEffects`.
-    await this.undoTargetSideEffects(
-      await repos.dockerMigrationRun.findById(id).catch(() => null),
-      servers,
-      ctx.organizationId,
-      (m) => this.appendLog(id, m),
-    );
-
-    await this.transition(id, "rolled_back", {
-      errorMessage: errorMessage.slice(0, 4096),
-    });
   }
 
   /**
@@ -3051,9 +3120,45 @@ class MigrationOrchestratorImpl {
       return;
     }
     for (const run of runs) {
+      const hasLiveExecution = Boolean(run.executionStartedAt && !run.executionFinishedAt);
+
+      // listInFlight deliberately includes terminal-looking rows whose callback
+      // had not acknowledged exit. On a self-hosted boot the prior process is
+      // gone, so closing that orphaned lease is safe; Cloud never runs this
+      // process-local recovery sweep.
+      if (["succeeded", "failed", "rolled_back"].includes(run.status)) {
+        if (hasLiveExecution) {
+          await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id).catch(() => {});
+        }
+        continue;
+      }
+
       // Parked states survive a restart untouched: the target is UP and the run
       // waits on an interactive resolve (cutover confirm / pending-path resume).
-      if (run.status === "awaiting_cutover" || run.status === "partial") continue;
+      // A keep/cutover callback can crash after claiming but before doing work;
+      // process restart proves that callback is gone, so release only its lease.
+      if (run.status === "awaiting_cutover" || run.status === "partial") {
+        if (hasLiveExecution) {
+          await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id).catch(() => {});
+        }
+        continue;
+      }
+
+      // `claimExecution(partial → moving_data)` marks resumed work. Unlike an
+      // initial migration failure, a resume must never tear down the already-live
+      // target. Put it back in its parked state; an empty pending list is valid
+      // and the next resume advances it to cutover without copying anything.
+      if (run.status === "moving_data" && hasLiveExecution) {
+        try {
+          await repos.dockerMigrationRun.transition(run.id, "partial", {
+            errorMessage: "Resume was interrupted — review pending paths and retry.",
+          });
+          await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id);
+        } catch (err) {
+          console.warn(`[migration] recovery resume ${run.id} failed:`, safeErrorMessage(err));
+        }
+        continue;
+      }
       const scanned = (run.scannedContainerIds ?? {}) as Record<string, string>;
 
       // A crash mid-CUTOVER is NOT a rollback: the target was already verified
@@ -3063,36 +3168,40 @@ class MigrationOrchestratorImpl {
       // (idempotent) cutover — destroying an already-gone container is a no-op —
       // and mark it succeeded.
       if (run.status === "cutover") {
-        let sourceFullyRetired = false;
-        if (run.sourceServerId) {
-          try {
+        try {
+          let sourceFullyRetired = false;
+          if (run.sourceServerId) {
             const { failed } = await this.cutover(run.sourceServerId, run.organizationId, scanned);
             sourceFullyRetired = failed.length === 0;
-          } catch (err) {
-            console.warn(`[migration] recovery cutover ${run.id} failed:`, safeErrorMessage(err));
-          }
 
-          // A crash can land after source destruction but before route/claim
-          // retirement. Replay that half idempotently. If cleanup was partial or
-          // unreachable, remove the stale source routes but retain every durable
-          // port claim for the surviving/unknown workload.
-          if (run.mode === "project_move" && run.projectId) {
-            await this.retireSourceRoutes(
-              run.projectId,
-              run.sourceServerId,
-              run.organizationId,
-              sourceFullyRetired,
-            );
+            // A crash can land after source destruction but before route/claim
+            // retirement. Replay that half idempotently. If cleanup was partial or
+            // unreachable, remove stale routes but retain claims for survivors.
+            if (run.mode === "project_move" && run.projectId) {
+              await this.retireSourceRoutes(
+                run.projectId,
+                run.sourceServerId,
+                run.organizationId,
+                sourceFullyRetired,
+              );
+            }
           }
+          await repos.dockerMigrationRun.transition(run.id, "succeeded");
+        } catch (err) {
+          const message = safeErrorMessage(err);
+          console.warn(`[migration] recovery cutover ${run.id} failed:`, message);
+          await repos.dockerMigrationRun
+            .transition(run.id, "cutover", {
+              errorMessage: `Cutover recovery incomplete — retry source cleanup: ${message}`.slice(
+                0,
+                4096,
+              ),
+            })
+            .catch(() => {});
         }
-        await repos.dockerMigrationRun
-          .transition(run.id, "succeeded")
-          .catch((err) =>
-            console.warn(
-              `[migration] recovery transition ${run.id} failed:`,
-              safeErrorMessage(err),
-            ),
-          );
+        if (hasLiveExecution) {
+          await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id).catch(() => {});
+        }
         continue;
       }
 
@@ -3125,6 +3234,9 @@ class MigrationOrchestratorImpl {
         .catch((err) =>
           console.warn(`[migration] recovery transition ${run.id} failed:`, safeErrorMessage(err)),
         );
+      if (hasLiveExecution) {
+        await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id).catch(() => {});
+      }
     }
   }
 }

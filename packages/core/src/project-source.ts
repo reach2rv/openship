@@ -313,6 +313,23 @@ export function validateReleaseRepository(value: string): string | null {
   return null;
 }
 
+/**
+ * Validate a Docker-compatible bracketed IPv6 registry host without importing
+ * Node-only networking APIs into the shared dashboard/core bundle.
+ */
+function isValidBracketedIpv6Host(host: string): boolean {
+  // Distribution references permit only hexadecimal IPv6 notation here (no
+  // zone identifiers or dotted IPv4 tail). The URL parser then verifies the
+  // compression and segment structure that a character class cannot express.
+  if (!/^\[[0-9a-fA-F:]+\]$/.test(host)) return false;
+  try {
+    const parsed = new URL(`http://${host}/`);
+    return parsed.hostname.startsWith("[") && parsed.hostname.endsWith("]");
+  } catch {
+    return false;
+  }
+}
+
 /** Validate the optional registry component, including a numeric TCP port. */
 function validateImageRegistry(registry: string): string | null {
   let host = registry;
@@ -327,11 +344,7 @@ function validateImageRegistry(registry: string): string | null {
       if (!rest.startsWith(":")) return "has invalid characters after its registry host.";
       port = rest.slice(1);
     }
-    // Syntactic IPv6 validation belongs here, without importing Node's `net`
-    // module into the browser-safe core bundle. This rejects every character
-    // outside an IPv6 literal; the daemon remains authoritative about address
-    // reachability.
-    if (!/^\[[0-9a-fA-F:.]+\]$/.test(host) || !host.includes(":")) {
+    if (!isValidBracketedIpv6Host(host)) {
       return "has an invalid bracketed IPv6 registry host.";
     }
   } else {
@@ -458,7 +471,12 @@ export function renderReleaseImage(
   const version = rawVersion.replace(/^v/i, "");
   if (!version) throw new Error("Release image version cannot contain only a leading v.");
 
-  const rendered = template.replaceAll("{version}", version).replaceAll("{tag}", rawTag);
+  // Interpolate in one pass so upstream release metadata remains data. With
+  // chained replaceAll calls, a version like `v1{tag}` was processed again by
+  // the second replacement and silently selected a different image.
+  const rendered = template.replace(/\{(?:version|tag)\}/g, (placeholder) =>
+    placeholder === "{version}" ? version : rawTag,
+  );
   const invalid = validateImageReference(rendered);
   if (invalid) throw new Error(invalid);
   return rendered;

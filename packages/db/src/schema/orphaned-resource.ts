@@ -24,7 +24,9 @@ export const orphanedResource = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     /** SSH server the resource lives on. Null for cloud resources. No FK — see doc. */
     serverId: text("server_id"),
-    /** container | image | volume | network | route | cloud_workspace */
+    /** Immutable physical bind namespace; unlike serverId, aliases cannot split GC ordering. */
+    targetKey: text("target_key"),
+    /** container | image | volume | network | route | host_port_claims | cloud_workspace */
     resourceType: text("resource_type").notNull(),
     /** The runtime ref to destroy (container id, image tag, volume name, …). */
     ref: text("ref").notNull(),

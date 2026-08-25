@@ -523,47 +523,29 @@ export function createProjectRepo(db: Database) {
     },
 
     /**
-     * Atomically mark the project as "teardown in progress". Returns true
-     * when this caller claimed the flag, false if another teardown is
-     * already running (and the caller should reject with a 409). Uses a
-     * conditional UPDATE so the read+write is a single row-locked op.
+     * Mark a live project as "teardown in progress".
+     *
+     * The caller owns the cross-process project-runtime advisory lock. That
+     * lock—not this crash-prone boolean—is the concurrency owner, so an old
+     * `true` left by a dead process is safely reclaimed here in Cloud and
+     * self-hosted modes alike. Returns false only when the live row is gone.
      */
     async claimDeletion(id: string): Promise<boolean> {
       const rows = await db
         .update(project)
         .set({ deletionInProgress: true, updatedAt: new Date() })
-        .where(
-          and(eq(project.id, id), eq(project.deletionInProgress, false), isNull(project.deletedAt)),
-        )
+        .where(and(eq(project.id, id), isNull(project.deletedAt)))
         .returning();
       return rows.length > 0;
     },
 
     /** Release the deletion-in-progress flag — call on every failure path so
-     *  the row isn't stuck refusing all writes after a partial teardown. */
+     *  ordinary project writes are admitted again after a partial teardown. */
     async clearDeletionInProgress(id: string) {
       await db
         .update(project)
         .set({ deletionInProgress: false, updatedAt: new Date() })
         .where(eq(project.id, id));
-    },
-
-    /**
-     * Boot-time sweep of stuck deletion locks. A `deletionInProgress=true`
-     * flag can only be left behind by a teardown that died mid-flight — no
-     * teardown survives a process restart — so at startup every such flag is
-     * necessarily stale and must be cleared, otherwise the project refuses all
-     * future deletes with "Another delete is already running" forever. Mirrors
-     * backupRun.sweepStaleRuns / backupRestore.sweepStaleRestores. Returns the
-     * number of locks cleared.
-     */
-    async clearStaleDeletions(): Promise<number> {
-      const rows = await db
-        .update(project)
-        .set({ deletionInProgress: false, updatedAt: new Date() })
-        .where(eq(project.deletionInProgress, true))
-        .returning();
-      return rows.length;
     },
 
     /**

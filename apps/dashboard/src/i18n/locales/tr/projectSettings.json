@@ -874,6 +874,9 @@
       "includeWwwFallback": "alanadiniz.com",
       "externalIngress": "Harici trafik girişi ve TLS",
       "externalIngressDesc": "TLS upstream katmanında sonlandırılır (Cloudflare Tunnel veya yük dengeleyici). Yalnızca TXT kaydıyla doğrulayın — alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
+      "dnsChallenge": "DNS-01 doğrulamasını kullan",
+      "dnsChallengeDesc": "Sertifikayı bağlı DNS sağlayıcınız üzerinden düzenleyin ve yenileyin. Port 80'e erişilemiyorsa bunu kullanın.",
+      "dnsChallengeWildcardDesc": "Wildcard sertifikalar DNS-01 ve bağlı bir DNS sağlayıcısı gerektirir.",
       "noWww": "Alan adını \"www.\" olmadan girin — eklemek için aşağıdan \"www dahil et\" seçeneğini açın.",
       "adding": "Ekleniyor...",
       "submit": "Alan adı ekle"

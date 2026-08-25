@@ -50,6 +50,7 @@ const h = vi.hoisted(() => ({
     webhookId: 77 as number | null,
     webhookDomain: "hooks.example.com" as string | null,
     autoDeploy: true,
+    deletionInProgress: false,
     activeDeploymentId: null as string | null,
     serverId: null as string | null,
     resources: null,
@@ -66,6 +67,7 @@ const h = vi.hoisted(() => ({
     projectFields: Record<string, unknown>;
     groupFields: Record<string, unknown>;
   }>,
+  ensureSharedWebhook: vi.fn(async () => null as number | null),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -143,8 +145,14 @@ vi.mock("../github/github.auth", () => ({
   getInstallUrl: () => "",
 }));
 vi.mock("./project-git-webhook", () => ({
-  ensureSharedWebhook: async () => null,
+  ensureSharedWebhook: h.ensureSharedWebhook,
   findSharedWebhookId: async () => null,
+}));
+vi.mock("../../lib/project-runtime-lock", () => ({
+  withLiveProjectRuntimeMutation: async (
+    _projectId: string,
+    mutate: (project: typeof h.project) => Promise<unknown>,
+  ) => (h.project.deletionInProgress ? undefined : mutate({ ...h.project })),
 }));
 vi.mock("../../lib/release-resolver", () => ({
   resolveLatestVersion: async () => null,
@@ -167,6 +175,7 @@ describe("project rename — the slug is immutable", () => {
     h.routeSyncs = [];
     h.liveRouteReapplies = 0;
     h.sourceUpdates = [];
+    h.project.deletionInProgress = false;
     Object.assign(h.project, {
       gitProvider: "github",
       framework: "node",
@@ -462,5 +471,22 @@ describe("project source transitions", () => {
     expect(fields).not.toHaveProperty("hasBuild");
     expect(fields).not.toHaveProperty("runtimeMode");
     expect(fields).not.toHaveProperty("startCommand");
+  });
+
+  it("does not register a webhook or repoint source after deletion claims the project", async () => {
+    h.project.deletionInProgress = true;
+    const { linkProjectRepo } = await load();
+
+    await expect(
+      linkProjectRepo({ userId: "user_1", organizationId: "org_1" } as never, "proj_1", {
+        owner: "acme",
+        repo: "new-source",
+        branch: "main",
+      }),
+    ).resolves.toEqual({ ok: false, code: "not_found" });
+
+    expect(h.ensureSharedWebhook).not.toHaveBeenCalled();
+    expect(h.sourceUpdates).toEqual([]);
+    expect(h.projectUpdates).toEqual([]);
   });
 });

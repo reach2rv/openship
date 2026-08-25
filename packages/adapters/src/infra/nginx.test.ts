@@ -30,6 +30,7 @@ import {
   EDGE_CHALLENGE_URL_PREFIX,
   ensureOpenRestyConfig,
   edgeDefaultCertPaths,
+  type OpenRestyPaths,
 } from "./openresty-lua";
 import { EDGE_NOT_FOUND_HTML } from "./edge-not-found";
 import type { CommandExecutor, RouteConfig } from "../types";
@@ -44,8 +45,30 @@ const SITES = "/tmp/openship-nginx-test/sites-enabled";
 const PATHS = { ...OPENRESTY_DEFAULT_PATHS, sitesDir: SITES };
 
 interface FakeOpts {
-  /** Simulate `openresty -t` failing inside the reload script. */
+  /** Simulate the combined validate/reload command failing. */
   failReload?: boolean;
+  /** Abort the owning cleanup exactly when the primary reload fails. */
+  abortOnReloadFailure?: AbortController;
+  /** Simulate nginx rejecting the configuration in both validation attempts. */
+  failValidation?: boolean;
+  /** Listener shape exposed while recovering a failed bare-host reload. */
+  reloadListener?:
+    | "verified-nginx"
+    | "verified-nginx-worker"
+    | "mixed-nginx"
+    | "same-port-mixed-nginx"
+    | "foreign-nginx"
+    | "foreign-nginx-config"
+    | "container-nginx"
+    | "unclassified"
+    | "unknown"
+    | "none";
+  /** Replace the verified master's args immediately after its generation capture. */
+  replaceMasterAfterGenerationCapture?: boolean;
+  /** Simulate hidepid/restricted procfs for the otherwise verified host master. */
+  unreadableMasterCgroup?: boolean;
+  /** Simulate losing the SSH/socket-table channel after config validation. */
+  failListenerProbe?: boolean;
   /** Domains whose Let's Encrypt fullchain exists (drives the TLS branch). */
   certDomains?: string[];
   /** Simulate an edge with no `openssl` CLI (bootstrap cert can't be produced). */
@@ -56,6 +79,7 @@ interface FakeOpts {
   failChmod?: boolean;
   provider?: Partial<NginxProviderOptions>;
   certbotFailure?: string;
+  paths?: OpenRestyPaths;
 }
 
 /** Stateful fake executor: in-memory file map + atomic-rename (`mv`) handling.
@@ -67,10 +91,95 @@ function makeExecutor(
   removed: string[] = [],
   writes: Array<{ path: string; content: string }> = [],
 ): RootChecked {
+  let masterGenerationCaptured = false;
   const exec = async (command: string): Promise<string> => {
     calls.push(command);
     // openresty path detection (reload re-detects) → fail so cached paths stick.
     if (/\s-V\b|command -v|which\s/.test(command)) throw new Error("no openresty in test");
+    if (
+      opts.failListenerProbe &&
+      (command.startsWith("ss -tlnp") ||
+        command.startsWith("sudo -n ") ||
+        command.includes("cat /proc/net/tcp"))
+    ) {
+      throw new Error("SSH connection dropped");
+    }
+    const reloadListener = opts.reloadListener ?? "verified-nginx";
+    if (command.startsWith("ss -tlnp sport = :") && reloadListener !== "none") {
+      if (reloadListener === "unknown") {
+        return "LISTEN 0 511 0.0.0.0:443 0.0.0.0:*";
+      }
+      if (reloadListener === "same-port-mixed-nginx") {
+        return command.includes(":80")
+          ? 'LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:(("nginx",pid=321,fd=6))\n' +
+              'LISTEN 0 511 127.0.0.1:80 0.0.0.0:* users:(("nginx",pid=333,fd=7))'
+          : 'LISTEN 0 511 0.0.0.0:443 0.0.0.0:* users:(("nginx",pid=321,fd=6))';
+      }
+      const pid =
+        reloadListener === "mixed-nginx"
+          ? command.includes(":80")
+            ? 321
+            : 333
+          : reloadListener === "verified-nginx-worker"
+            ? 322
+            : reloadListener === "foreign-nginx"
+              ? 333
+              : reloadListener === "foreign-nginx-config"
+                ? 334
+                : reloadListener === "container-nginx"
+                  ? 336
+                  : reloadListener === "unclassified"
+                    ? 335
+                    : 321;
+      return `LISTEN 0 511 0.0.0.0:443 0.0.0.0:* users:(("nginx",pid=${pid},fd=6))`;
+    }
+    if (command === "ps -p 321 -o args= 2>/dev/null || true") {
+      if (opts.replaceMasterAfterGenerationCapture && masterGenerationCaptured) {
+        return `nginx: master process ${PATHS.bin} -c /etc/nginx/foreign.conf`;
+      }
+      return "nginx: master process /usr/sbin/nginx -g daemon on;";
+    }
+    if (command === "ps -p 322 -o args= 2>/dev/null || true") {
+      return "nginx: worker process";
+    }
+    if (command === "ps -p 333 -o args= 2>/dev/null || true") {
+      return "nginx: master process /usr/sbin/nginx -g daemon on;";
+    }
+    if (command === "ps -p 334 -o args= 2>/dev/null || true") {
+      return `nginx: master process ${PATHS.bin} -c /etc/nginx/foreign.conf`;
+    }
+    if (command === "ps -p 336 -o args= 2>/dev/null || true") {
+      return `nginx: master process ${PATHS.bin} -g daemon on;`;
+    }
+    if (command.includes("/proc/322/status")) return "321";
+    if (command.includes("kill -HUP")) {
+      if (opts.failReload && opts.reloadListener === undefined) {
+        opts.abortOnReloadFailure?.abort();
+        throw new Error("nginx reload signal failed");
+      }
+      return "";
+    }
+    if (command.includes("/proc/321/stat")) {
+      masterGenerationCaptured = true;
+      return "987";
+    }
+    if (command === "cat /proc/336/cgroup 2>/dev/null") {
+      return `0::/docker/${"a".repeat(64)}`;
+    }
+    if (command.startsWith("readlink -f ")) {
+      if (command.includes("/proc/333/exe")) return "/usr/sbin/nginx";
+      if (command.includes("/proc/334/exe")) return PATHS.bin;
+      if (command.includes("/proc/336/exe")) return PATHS.bin;
+      if (command.includes("/proc/321/exe")) return PATHS.bin;
+      if (command.includes("/etc/nginx/foreign.conf")) return "/etc/nginx/foreign.conf";
+      if (command.includes(PATHS.bin)) return PATHS.bin;
+      if (command.includes(PATHS.confPath)) return PATHS.confPath;
+      return "";
+    }
+    if (command === "cat /proc/321/cgroup 2>/dev/null") {
+      if (opts.unreadableMasterCgroup) throw new Error("permission denied");
+      return "0::/system.slice/openship-openresty.service";
+    }
     if (command.startsWith("openssl ")) {
       if (opts.noOpenssl) throw new Error("openssl: not found");
       // Real openssl writes the pair; the fake just records the two staged paths so
@@ -125,7 +234,10 @@ function makeExecutor(
       }
       return "";
     }
-    // The reload script contains `-t ... -s reload`; a `-t` failure exits non-zero.
+    if (command.includes(" -t ") && opts.failValidation) {
+      throw new Error("nginx: [emerg] configuration test failed");
+    }
+    // The reload script contains `-t ... -s reload`; either failure exits non-zero.
     if (command.includes("-s reload")) {
       if (opts.failReload) throw new Error("nginx: [emerg] configuration test failed");
       return "";
@@ -161,7 +273,7 @@ function setup(opts: FakeOpts = {}) {
   const writes: Array<{ path: string; content: string }> = [];
   const nginx = new NginxProvider({
     ...opts.provider,
-    paths: PATHS,
+    paths: opts.paths ?? PATHS,
     executor: makeExecutor(files, opts, calls, removed, writes),
   });
   return {
@@ -657,6 +769,97 @@ describe("NginxProvider config generation", () => {
     expect(certbot).toContain("--cert-name");
     expect(certbot).not.toContain("--webroot");
   });
+  test("provisionCert issues via DNS-01 when challenge option is dns-01", async () => {
+    const { nginx, calls } = setup();
+    await nginx.registerRoute(PROXY);
+    await expect(
+      nginx.provisionCert("app.example.com", {
+        challenge: "dns-01",
+        dnsAuthHook: "/tmp/auth.sh",
+        dnsCleanupHook: "/tmp/cleanup.sh",
+      }),
+    ).rejects.toThrow();
+    const certbot = calls.find(
+      (c) => c.startsWith("certbot 'certonly'") || c.startsWith("certbot certonly"),
+    );
+    expect(certbot).toBeDefined();
+    expect(certbot).toContain("--manual");
+    expect(certbot).toContain("--preferred-challenges");
+    expect(certbot).toContain("dns");
+    expect(certbot).toContain("--manual-auth-hook");
+    expect(certbot).toContain("/tmp/auth.sh");
+    expect(certbot).toContain("--manual-cleanup-hook");
+    expect(certbot).toContain("/tmp/cleanup.sh");
+    expect(certbot).not.toContain("--standalone");
+    expect(certbot).not.toContain("--http-01-port");
+  });
+
+  test("generated DNS hooks are written on the executor target and removed", async () => {
+    const { nginx, calls, writes, removed } = setup();
+    await nginx.registerRoute(PROXY);
+    await expect(
+      nginx.provisionCert("app.example.com", {
+        challenge: "dns-01",
+        dnsAuthHookScript: "#!/bin/sh\necho auth\n",
+        dnsCleanupHookScript: "#!/bin/sh\necho cleanup\n",
+      }),
+    ).rejects.toThrow();
+
+    const authWrite = writes.find((write) => write.path.includes("/auth.sh.tmp-"));
+    const cleanupWrite = writes.find((write) => write.path.includes("/cleanup.sh.tmp-"));
+    expect(authWrite?.path).toMatch(/^\/etc\/letsencrypt\/\.openship-dns-/);
+    expect(authWrite?.content).toContain("echo auth");
+    expect(cleanupWrite?.content).toContain("echo cleanup");
+    const certbot = calls.find((call) => call.includes("certonly"));
+    const authPath = authWrite!.path.replace(/\.tmp-.+$/, "");
+    expect(certbot).toContain(authPath);
+    expect(certbot).toContain("OPENSHIP_DNS_RECORD_FILE=");
+    expect(removed).toContain(authPath.replace(/\/auth\.sh$/, ""));
+  });
+
+  test("provisionCert automatically uses DNS-01 for wildcard domains", async () => {
+    const { nginx, calls } = setup();
+    await nginx.registerRoute({ ...PROXY, domain: "*.example.com" });
+    await expect(nginx.provisionCert("*.example.com")).rejects.toThrow();
+    const certbot = calls.find(
+      (c) => c.startsWith("certbot 'certonly'") || c.startsWith("certbot certonly"),
+    );
+    expect(certbot).toBeDefined();
+    expect(certbot).toContain("--manual");
+    expect(certbot).toContain("--preferred-challenges");
+    expect(certbot).toContain("dns");
+    expect(certbot).toContain("-d");
+    expect(certbot).toContain("*.example.com");
+    expect(certbot).not.toContain("--standalone");
+  });
+
+  test("renewCert delegates to provisionCert with DNS-01 for wildcard domain with no lineage", async () => {
+    const { nginx, calls } = setup();
+    await expect(nginx.renewCert("*.example.com")).rejects.toThrow();
+    const certbot = calls.find(
+      (c) => c.startsWith("certbot 'certonly'") || c.startsWith("certbot certonly"),
+    );
+    expect(certbot).toBeDefined();
+    expect(certbot).toContain("--manual");
+    expect(certbot).toContain("--preferred-challenges");
+    expect(certbot).toContain("dns");
+  });
+
+  test("renewCert reissues DNS-01 with freshly materialized hooks", async () => {
+    const { nginx, calls, writes } = setup({ certDomains: ["app.example.com"] });
+    await expect(
+      nginx.renewCert("app.example.com", {
+        challenge: "dns-01",
+        dnsAuthHookScript: "#!/bin/sh\necho fresh\n",
+        dnsCleanupHookScript: "#!/bin/sh\nexit 0\n",
+      }),
+    ).rejects.toThrow();
+    expect(calls.some((call) => call.includes("certbot") && call.includes("'certonly'"))).toBe(
+      true,
+    );
+    expect(calls.some((call) => call.includes("certbot") && call.includes("'renew'"))).toBe(false);
+    expect(writes.some((write) => write.path.includes("/auth.sh.tmp-"))).toBe(true);
+  });
 
   test("alternate ACME directory, CA bundle, and key type reach certbot", async () => {
     const { nginx, calls } = setup({
@@ -848,13 +1051,17 @@ describe("NginxProvider config generation", () => {
     ).rejects.toThrow(/Invalid domain/);
   });
 
-  test("reload validates (-t) BEFORE -s reload", async () => {
+  test("bare reload validates before its verified direct HUP and never trusts the pidfile", async () => {
     const { nginx, calls } = setup();
     await nginx.registerRoute(PROXY);
-    const reloadCmd = calls.find((c) => c.includes("-s reload"));
-    expect(reloadCmd).toBeDefined();
-    expect(reloadCmd!.indexOf(" -t")).toBeGreaterThanOrEqual(0);
-    expect(reloadCmd!.indexOf(" -t")).toBeLessThan(reloadCmd!.indexOf("-s reload"));
+    const validationIndex = calls.findIndex((command) =>
+      command.includes(` -t -c '${PATHS.confPath}' 2>&1`),
+    );
+    const signalIndex = calls.findIndex((command) => command.includes("kill -HUP 321"));
+    expect(validationIndex).toBeGreaterThanOrEqual(0);
+    expect(signalIndex).toBeGreaterThan(validationIndex);
+    expect(calls[signalIndex]).toContain("cat /proc/321/cgroup");
+    expect(calls.some((command) => command.includes("-s reload"))).toBe(false);
   });
 
   test("a domain we terminate TLS for gets a :443 listener BEFORE its cert exists", async () => {
@@ -936,8 +1143,226 @@ describe("NginxProvider config generation", () => {
     expect(removed).toContain(BOOTSTRAP_DIR);
   });
 
+  test("a stopped legacy edge converges route removal on disk without starting a daemon", async () => {
+    const { nginx, files, calls } = setup({ reloadListener: "none" });
+    files.set(`${SITES}/app-example-com.conf`, "# existing route");
+    files.set(`${SITES}/app-example-com.route.json`, JSON.stringify(PROXY));
+
+    await nginx.removeRoute("app.example.com");
+
+    expect(files.has(`${SITES}/app-example-com.conf`)).toBe(false);
+    expect(files.has(`${SITES}/app-example-com.route.json`)).toBe(false);
+    expect(calls.some((command) => command.trim() === PATHS.bin)).toBe(false);
+    expect(calls.some((command) => /\b(?:pkill|kill -9)\b/.test(command))).toBe(false);
+  });
+
+  test("a stale PID file is never trusted, even when `nginx -s reload` would succeed", async () => {
+    const { nginx, files, calls } = setup({
+      // Linux commonly attributes the inherited listen socket to a worker;
+      // safe reload must walk exactly one verified parent hop before signalling.
+      reloadListener: "verified-nginx-worker",
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# existing route");
+
+    await nginx.removeRoute("app.example.com");
+
+    expect(files.has(`${SITES}/app-example-com.conf`)).toBe(false);
+    expect(calls.filter((command) => command.includes("kill -HUP 321"))).toHaveLength(1);
+    const generationCapture = calls.findIndex((command) => command.includes("/proc/321/stat"));
+    const identityChecks = calls
+      .map((command, index) => ({ command, index }))
+      .filter(
+        ({ command }) => command.startsWith("readlink -f ") && command.includes("/proc/321/exe"),
+      );
+    expect(generationCapture).toBeGreaterThanOrEqual(0);
+    expect(identityChecks.some(({ index }) => index > generationCapture)).toBe(true);
+    expect(calls.some((command) => command.includes("-s reload"))).toBe(false);
+    expect(calls.some((command) => command.trim() === PATHS.bin)).toBe(false);
+  });
+
+  test("rejects PID reuse when the replacement master has different config args", async () => {
+    const { nginx, files, calls } = setup({
+      reloadListener: "verified-nginx-worker",
+      replaceMasterAfterGenerationCapture: true,
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# existing route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /executable and configuration could not be verified/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# existing route");
+    expect(calls.some((command) => command.includes("kill -HUP 321"))).toBe(false);
+  });
+
+  test("an owner-hidden listener fails closed and restores the removed route", async () => {
+    const { nginx, files, calls } = setup({
+      failReload: true,
+      reloadListener: "unknown",
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# existing route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /listener on port 80\/443 could not be identified/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# existing route");
+    expect(calls.some((command) => /\b(?:pkill|kill -9)\b/.test(command))).toBe(false);
+    expect(calls.some((command) => command.trim() === PATHS.bin)).toBe(false);
+  });
+
+  test("a timed-out removal never restores its vhost from a late reload failure", async () => {
+    const controller = new AbortController();
+    const { nginx, files } = setup({
+      failReload: true,
+      abortOnReloadFailure: controller,
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# existing route");
+    files.set(`${SITES}/app-example-com.route.json`, JSON.stringify(PROXY));
+
+    await expect(
+      nginx.removeRoute("app.example.com", { signal: controller.signal }),
+    ).rejects.toThrow(/reload signal failed/);
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(files.has(`${SITES}/app-example-com.conf`)).toBe(false);
+    expect(files.has(`${SITES}/app-example-com.route.json`)).toBe(false);
+  });
+
+  test("an inconclusive listener probe is never treated as proof the edge stopped", async () => {
+    const { nginx, files, calls } = setup({
+      failReload: true,
+      failListenerProbe: true,
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# existing route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /listener probe was inconclusive/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# existing route");
+    expect(calls.some((command) => /\b(?:pkill|kill -9)\b/.test(command))).toBe(false);
+  });
+
+  test("fails closed instead of treating a foreign live nginx as a stopped managed edge", async () => {
+    const { nginx, files, calls } = setup({
+      failReload: true,
+      reloadListener: "foreign-nginx",
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# legacy Openship route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(/foreign listener owns/);
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# legacy Openship route");
+    expect(calls.some((command) => command === "kill -HUP 333")).toBe(false);
+    expect(calls.some((command) => command.startsWith("systemctl reload"))).toBe(false);
+  });
+
+  test("never HUPs a no--c master when detection selected a different fallback config", async () => {
+    const { nginx, files, calls } = setup({
+      paths: {
+        ...PATHS,
+        compiledConfPath: "/etc/openresty/compiled/nginx.conf",
+      },
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# legacy Openship route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /executable and configuration could not be verified/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# legacy Openship route");
+    expect(calls.some((command) => command.includes("kill -HUP 321"))).toBe(false);
+  });
+
+  test("fails closed when managed OpenResty and a foreign daemon split ports 80/443", async () => {
+    const { nginx, files, calls } = setup({ reloadListener: "mixed-nginx" });
+    files.set(`${SITES}/app-example-com.conf`, "# existing route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /shares ports 80\/443 with a foreign listener/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# existing route");
+    expect(calls.some((command) => command.includes("kill -HUP 321"))).toBe(false);
+    expect(calls.some((command) => command.includes("kill -HUP 333"))).toBe(false);
+  });
+
+  test("fails closed when a foreign daemon shares the same port with managed OpenResty", async () => {
+    const { nginx, files, calls } = setup({ reloadListener: "same-port-mixed-nginx" });
+    files.set(`${SITES}/app-example-com.conf`, "# existing route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /shares ports 80\/443 with a foreign listener/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# existing route");
+    expect(calls.some((command) => command.includes("kill -HUP 321"))).toBe(false);
+    expect(calls.some((command) => command.includes("kill -HUP 333"))).toBe(false);
+  });
+
+  test("fails closed when the same binary is running a different config tree", async () => {
+    const { nginx, files, calls } = setup({
+      failReload: true,
+      reloadListener: "foreign-nginx-config",
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# legacy Openship route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /executable and configuration could not be verified/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# legacy Openship route");
+    expect(calls.some((command) => command.includes("kill -HUP 334"))).toBe(false);
+    expect(calls.some((command) => command.startsWith("systemctl reload"))).toBe(false);
+  });
+
+  test("never signals a same-binary nginx master owned by a host-networked container", async () => {
+    const { nginx, files, calls } = setup({
+      failReload: true,
+      reloadListener: "container-nginx",
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# legacy Openship route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(/container-backed/);
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# legacy Openship route");
+    expect(calls.some((command) => command.includes("kill -HUP 336"))).toBe(false);
+    expect(calls.some((command) => command.startsWith("systemctl reload"))).toBe(false);
+  });
+
+  test("never signals a same-binary master when procfs cannot prove its cgroup", async () => {
+    const { nginx, files, calls } = setup({
+      failReload: true,
+      unreadableMasterCgroup: true,
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# legacy Openship route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /host ownership could not be proven/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# legacy Openship route");
+    expect(calls.some((command) => command.includes("kill -HUP 321"))).toBe(false);
+  });
+
+  test("fails closed when a PID is visible but ps cannot describe its invocation", async () => {
+    const { nginx, files, calls } = setup({
+      failReload: true,
+      reloadListener: "unclassified",
+    });
+    files.set(`${SITES}/app-example-com.conf`, "# legacy Openship route");
+
+    await expect(nginx.removeRoute("app.example.com")).rejects.toThrow(
+      /executable and configuration could not be verified/,
+    );
+
+    expect(files.get(`${SITES}/app-example-com.conf`)).toBe("# legacy Openship route");
+    expect(calls.some((command) => command.includes("kill -HUP 335"))).toBe(false);
+  });
+
   test("a failed `openresty -t` rolls the vhost back to the prior config", async () => {
-    const { nginx, files, conf } = setup({ failReload: true });
+    const { nginx, files, conf } = setup({ failValidation: true });
     // Seed a known-good prior conf for this slug.
     files.set(`${SITES}/app-example-com.conf`, "# PRIOR GOOD CONFIG");
     await expect(nginx.registerRoute(PROXY)).rejects.toThrow();

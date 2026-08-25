@@ -3470,7 +3470,9 @@ export class DockerRuntime implements RuntimeAdapter {
    * the ones that survive `container.remove()` and would otherwise leak.
    * Anonymous volumes are auto-removed with `{ v: true }` and don't need to
    * be enumerated. Bind mounts and tmpfs are skipped (the user manages them
-   * outside our control). Returns [] if the container is already gone.
+   * outside our control). Returns [] only if the container is already gone;
+   * transport and permission failures propagate so an explicit volume wipe
+   * never destroys the last copy of its mount inventory.
    */
   async inspectNamedVolumes(containerId: string): Promise<string[]> {
     try {
@@ -3480,18 +3482,19 @@ export class DockerRuntime implements RuntimeAdapter {
       return mounts
         .filter((m) => m.Type === "volume" && typeof m.Name === "string" && m.Name.length > 0)
         .map((m) => m.Name as string);
-    } catch {
-      return [];
+    } catch (err) {
+      if (isDockerNotFoundError(err)) return [];
+      throw err;
     }
   }
 
-  /** Remove a named volume by name. Best-effort - already-gone is fine. */
+  /** Remove a named volume by name. Already-gone is idempotent success. */
   async removeVolume(name: string): Promise<void> {
     try {
       const volume = this.docker.getVolume(name);
       await volume.remove({ force: true });
-    } catch {
-      // Already removed, in-use elsewhere, or doesn't exist.
+    } catch (err) {
+      if (!isDockerNotFoundError(err)) throw err;
     }
   }
 
@@ -4699,14 +4702,14 @@ export class DockerRuntime implements RuntimeAdapter {
     }
   }
 
-  /** Remove a project network (best-effort). */
+  /** Remove a project network. Already-gone is idempotent success. */
   async removeNetwork(slug: string): Promise<void> {
     const networkName = `openship-${slug}`;
     try {
       const network = this.docker.getNetwork(networkName);
       await network.remove();
-    } catch {
-      // Already removed or doesn't exist - fine
+    } catch (err) {
+      if (!isDockerNotFoundError(err)) throw err;
     }
   }
 

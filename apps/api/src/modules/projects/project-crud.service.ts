@@ -33,10 +33,8 @@ import {
   aliasConflictsWithSiblings,
   normalizeFramework,
   isServicesFramework,
-  deriveProjectDeployTarget,
   resolveWorkload,
   toWorkloadType,
-  type DeployTarget,
   type ReleaseSource,
   type UpdatableIdentity,
   type WorkloadType,
@@ -87,6 +85,9 @@ import type {
   TSetReleaseSourceBody,
 } from "./project.schema";
 import { UpdateProjectBody } from "./project.schema";
+import { readDeployMeta, resolveProjectDeployTarget } from "./project-deploy-target";
+import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
+export { resolveProjectDeployTarget } from "./project-deploy-target";
 
 /**
  * Mass-assignment allow-list for PATCH /projects/:id — the exact set of
@@ -136,63 +137,6 @@ type EnsureProjectBody = TEnsureProjectBody;
 type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[number];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Where a project runs, for every read surface. This is the one place that
- *  resolution happens, so enrichProject, its batch variant, and getGitInfo cannot
- *  answer it differently. Server *name* resolution stays at the call site because
- *  single vs batch fetch it differently (one `server.get` vs a prefetched map).
- *
- *  The target is DERIVED (`deriveProjectDeployTarget`) from the cloud binding and the
- *  server id resolved here, NOT read from `meta.deployTarget` as it used to be. That
- *  snapshot is per-deploy state a fresh or partial redeploy can drop, and the drop was
- *  silent: a cloud project then reported `deployTarget: null`, which flips `isCloud`
- *  below — swapping the resource ceilings the dashboard renders — and switches off every
- *  cloud gate in the dashboard, where `deployTarget === "cloud"` IS the cloud test. It
- *  also left the two fields disagreeing, since `serverId` already coalesced to its
- *  column while the target did not. */
-function readDeployMeta(
-  p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
-  dep: Deployment | null | undefined,
-): { deployTarget: DeployTarget | null; serverId: string | null } {
-  const meta = (dep?.meta ?? null) as { serverId?: string } | null;
-  // Snapshot first, column second, and deliberately so: meta.serverId is where the live
-  // release ACTUALLY runs, the column is where the project is bound, and this projection
-  // answers the former. The column fills in when a fresh or partial deploy dropped the
-  // snapshot, or when a deleted server nulled the column (ON DELETE SET NULL) — the same
-  // coalesce `resolveOrgServer` and `project.repo.countActiveByServer` use, so the id
-  // here names the machine a deploy would actually reach. Pinned by
-  // test/modules/projects/enrich-project-server-id.test.ts.
-  const serverId = meta?.serverId ?? p.serverId ?? null;
-  // Bound to nothing and never deployed: no target yet. Answering "local" here would be
-  // picking one on the operator's behalf — the hosting badge renders none, and the deploy
-  // wizard seeds a validated target rather than inheriting a guess from this projection.
-  if (!p.cloudWorkspaceId && !serverId && !p.activeDeploymentId) {
-    return { deployTarget: null, serverId: null };
-  }
-  const deployTarget = deriveProjectDeployTarget({
-    cloudWorkspaceId: p.cloudWorkspaceId,
-    serverId,
-  });
-  // The pair must agree. A cloud-bound project can still carry a server id — from the
-  // column it was bound to before it moved, or from the snapshot of that last deploy —
-  // and emitting both is how a card ends up labelled "Cloud" while holding a server's
-  // name, or a wizard hydrates its target from one field and its destination from the
-  // other. The target won; the id it didn't come from goes.
-  return { deployTarget, serverId: deployTarget === "server" ? serverId : null };
-}
-
-/** `readDeployMeta` for callers that don't already hold the active deployment row.
- *  Exported so the project DETAIL read resolves the target through this rule instead
- *  of re-deriving it inline — the detail payload is what the deploy wizard hydrates
- *  its target from, so a second copy of the rule there is a wrong destination. */
-export async function resolveProjectDeployTarget(
-  p: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
-): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
-  const activeDep = p.activeDeploymentId
-    ? ((await repos.deployment.findById(p.activeDeploymentId)) ?? null)
-    : null;
-  return readDeployMeta(p, activeDep);
-}
 
 // The attention predicates live in a dependency-free leaf module so the
 // pending-actions aggregator can share them without importing this file's graph.
@@ -1102,115 +1046,121 @@ export async function linkProjectRepo(
   if (!owner || !repo)
     return { ok: false, code: "invalid", message: "owner and repo are required" };
 
-  const project = await repos.project.findById(projectId);
-  try {
-    assertResourceInOrg(project, "Project", organizationId, projectId);
-  } catch {
-    return { ok: false, code: "not_found" };
-  }
+  const result = await withLiveProjectRuntimeMutation(
+    projectId,
+    async (project): Promise<LinkProjectRepoOutcome> => {
+      try {
+        assertResourceInOrg(project, "Project", organizationId, projectId);
+      } catch {
+        return { ok: false, code: "not_found" } as const;
+      }
 
-  const gitUrl = projectGitUrl(owner, repo);
-  const defaultBranch = await resolveDefaultBranch(ctx, owner, repo, input.branch);
-  // A project_app is one source identity even if an old/partial write left its
-  // environments inconsistent. Linking Git converges the whole group, so clear
-  // release-only class overrides when ANY sibling still carries that source.
-  const leavingReleaseSource = project!.groupId
-    ? (await repos.project.listByGroup(project!.groupId)).some((sibling) =>
-        isReleaseProvider(sibling.gitProvider),
-      )
-    : isReleaseProvider(project!.gitProvider);
+      const gitUrl = projectGitUrl(owner, repo);
+      const defaultBranch = await resolveDefaultBranch(ctx, owner, repo, input.branch);
+      // A project_app is one source identity even if an old/partial write left its
+      // environments inconsistent. Linking Git converges the whole group, so clear
+      // release-only class overrides when ANY sibling still carries that source.
+      const leavingReleaseSource = project!.groupId
+        ? (await repos.project.listByGroup(project!.groupId)).some((sibling) =>
+            isReleaseProvider(sibling.gitProvider),
+          )
+        : isReleaseProvider(project!.gitProvider);
 
-  const gitFields: Record<string, unknown> = {
-    gitProvider: "github",
-    gitOwner: owner,
-    gitRepo: repo,
-    gitBranch: defaultBranch,
-    gitUrl,
-    // Source transition: a Git repo and a release image are mutually exclusive.
-    // Clear every release-only/clone-bypass override atomically so the next
-    // deploy derives its normal source/build class from the linked repository.
-    releaseSource: null,
-    localPath: null,
-    sourceKind: null,
-    // Release projects deliberately override these columns to describe a
-    // prebuilt artifact. Clear those overrides when (and only when) leaving a
-    // release source. Relinking an ordinary Git/local project must retain its
-    // intentional Docker/build/runtime settings.
-    ...(leavingReleaseSource
-      ? { buildKind: null, hasBuild: true, runtimeMode: null, startCommand: null }
-      : {}),
-    webhookId: null,
-    installationId: null,
-    autoDeploy: false,
-  };
+      const gitFields: Record<string, unknown> = {
+        gitProvider: "github",
+        gitOwner: owner,
+        gitRepo: repo,
+        gitBranch: defaultBranch,
+        gitUrl,
+        // Source transition: a Git repo and a release image are mutually exclusive.
+        // Clear every release-only/clone-bypass override atomically so the next
+        // deploy derives its normal source/build class from the linked repository.
+        releaseSource: null,
+        localPath: null,
+        sourceKind: null,
+        // Release projects deliberately override these columns to describe a
+        // prebuilt artifact. Clear those overrides when (and only when) leaving a
+        // release source. Relinking an ordinary Git/local project must retain its
+        // intentional Docker/build/runtime settings.
+        ...(leavingReleaseSource
+          ? { buildKind: null, hasBuild: true, runtimeMode: null, startCommand: null }
+          : {}),
+        webhookId: null,
+        installationId: null,
+        autoDeploy: false,
+      };
 
-  const strategy = await resolveWebhookStrategy(project!);
+      const strategy = await resolveWebhookStrategy(project!);
 
-  if (strategy === "app") {
-    const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
-    if (!resolvedInstId) {
-      return { ok: false, code: "app_not_installed", owner, installUrl: getInstallUrl() };
-    }
-    gitFields.installationId = resolvedInstId;
-    gitFields.autoDeploy = true;
-  } else if (strategy === "domain" || strategy === "repo") {
-    // Register/reuse the repo webhook via the SHARED reconciler (org+repo scoped,
-    // deactivates a superseded hook, fans the webhookId across same-repo projects)
-    // — the exact path setAutoDeploy uses, instead of a bespoke registerWebhook.
-    // A failure just means no auto-deploy yet; the link still succeeds and the
-    // user can enable it later.
-    const webhookUrl =
-      strategy === "domain" ? domainWebhookUrl(project!.webhookDomain!) : undefined;
-    const hookId = await ensureSharedWebhook(ctx, project!, owner, repo, webhookUrl).catch(
-      () => null,
-    );
-    if (hookId) {
-      gitFields.webhookId = hookId;
-      gitFields.autoDeploy = true;
-    }
-  }
+      if (strategy === "app") {
+        const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
+        if (!resolvedInstId) {
+          return { ok: false, code: "app_not_installed", owner, installUrl: getInstallUrl() };
+        }
+        gitFields.installationId = resolvedInstId;
+        gitFields.autoDeploy = true;
+      } else if (strategy === "domain" || strategy === "repo") {
+        // Register/reuse the repo webhook via the SHARED reconciler (org+repo scoped,
+        // deactivates a superseded hook, fans the webhookId across same-repo projects)
+        // — the exact path setAutoDeploy uses, instead of a bespoke registerWebhook.
+        // A failure just means no auto-deploy yet; the link still succeeds and the
+        // user can enable it later.
+        const webhookUrl =
+          strategy === "domain" ? domainWebhookUrl(project!.webhookDomain!) : undefined;
+        const hookId = await ensureSharedWebhook(ctx, project!, owner, repo, webhookUrl).catch(
+          () => null,
+        );
+        if (hookId) {
+          gitFields.webhookId = hookId;
+          gitFields.autoDeploy = true;
+        }
+      }
 
-  if (project!.groupId) {
-    const sharedGitFields = {
-      gitProvider: "github",
-      gitOwner: owner,
-      gitRepo: repo,
-      gitUrl,
-      installationId:
-        typeof gitFields.installationId === "number"
-          ? gitFields.installationId
-          : (input.installationId ?? null),
-      releaseSource: null,
-      localPath: null,
-      sourceKind: null,
-      ...(leavingReleaseSource
-        ? { buildKind: null, hasBuild: true, runtimeMode: null, startCommand: null }
-        : {}),
-      webhookId: typeof gitFields.webhookId === "number" ? gitFields.webhookId : null,
-      autoDeploy: Boolean(gitFields.autoDeploy),
-    };
-    await repos.project.updateSourceByApp(project!.groupId, sharedGitFields, {
-      gitProvider: "github",
-      gitOwner: owner,
-      gitRepo: repo,
-      gitUrl,
-      installationId: sharedGitFields.installationId,
-    });
-    // Environments intentionally keep their own branches; only the environment
-    // the operator linked adopts the selected/default branch.
-    await repos.project.update(projectId, { gitBranch: defaultBranch });
-  } else {
-    await repos.project.update(projectId, gitFields);
-  }
+      if (project!.groupId) {
+        const sharedGitFields = {
+          gitProvider: "github",
+          gitOwner: owner,
+          gitRepo: repo,
+          gitUrl,
+          installationId:
+            typeof gitFields.installationId === "number"
+              ? gitFields.installationId
+              : (input.installationId ?? null),
+          releaseSource: null,
+          localPath: null,
+          sourceKind: null,
+          ...(leavingReleaseSource
+            ? { buildKind: null, hasBuild: true, runtimeMode: null, startCommand: null }
+            : {}),
+          webhookId: typeof gitFields.webhookId === "number" ? gitFields.webhookId : null,
+          autoDeploy: Boolean(gitFields.autoDeploy),
+        };
+        await repos.project.updateSourceByApp(project!.groupId, sharedGitFields, {
+          gitProvider: "github",
+          gitOwner: owner,
+          gitRepo: repo,
+          gitUrl,
+          installationId: sharedGitFields.installationId,
+        });
+        // Environments intentionally keep their own branches; only the environment
+        // the operator linked adopts the selected/default branch.
+        await repos.project.update(projectId, { gitBranch: defaultBranch });
+      } else {
+        await repos.project.update(projectId, gitFields);
+      }
 
-  return {
-    ok: true,
-    owner,
-    repo,
-    branch: defaultBranch,
-    strategy,
-    autoDeploy: !!gitFields.autoDeploy,
-  };
+      return {
+        ok: true,
+        owner,
+        repo,
+        branch: defaultBranch,
+        strategy,
+        autoDeploy: !!gitFields.autoDeploy,
+      };
+    },
+  );
+
+  return result ?? { ok: false, code: "not_found" };
 }
 
 /** Atomically transition a whole project-environment group to a tracked
@@ -1876,39 +1826,34 @@ export async function updateProject(
     }
 
     // Re-apply the live route so a domain/port edit takes effect without a
-    // redeploy. Remote routing can take longer than the dashboard's request
-    // timeout (SSH connection + route removal/registration), while the domain
-    // rows above are already canonical. Keep this best-effort work in the
-    // background so the mutation can return success as soon as persistence is
-    // complete instead of surfacing a false client-side timeout.
-    const refreshed = await repos.project.findById(projectId);
-    if (refreshed) {
-      void (async () => {
-        // `managedEdgeSyncedByCaller`: the `syncProjectManagedEdge` below already
-        // covers every managed hostname on the project, including the ones added by
-        // this edit. Letting the re-apply sync them too raced its own follow-up —
-        // two challenges for one target, the second resetting the first's token.
-        await reapplyCompleteProjectRouting(refreshed, previousHostnames, {
-          managedEdgeSyncedByCaller: true,
-        });
-        // A free (*.opsh.io) domain resolves only through Openship Cloud's edge.
-        // reapplyProjectLiveRoutes handles the self-hosted OpenResty side; the
-        // managed edge must be re-registered too or an edited/added free URL
-        // 404s with no signal. Only meaningful once deployed (no live target
-        // otherwise — the next deploy syncs). On failure this sets
-        // meta.edgeUnsynced so the project surfaces "Retry routing" instead of
-        // silently returning a dead URL.
-        if (refreshed.activeDeploymentId) {
-          await syncProjectManagedEdge(refreshed, organizationId, {
-            markOnFailure: true,
-          }).catch((err) =>
-            console.warn(
-              `[updateProject] managed edge sync failed (non-fatal): ${safeErrorMessage(err)}`,
-            ),
-          );
-        }
-      })();
-    }
+    // redeploy. This MUST be awaited and serialized with teardown: a detached
+    // SSH writer could otherwise start before DELETE, finish after DELETE, and
+    // recreate a vhost after its project/orphan record was gone.
+    await withLiveProjectRuntimeMutation(projectId, async (refreshed) => {
+      // `managedEdgeSyncedByCaller`: the `syncProjectManagedEdge` below already
+      // covers every managed hostname on the project, including the ones added by
+      // this edit. Letting the re-apply sync them too raced its own follow-up —
+      // two challenges for one target, the second resetting the first's token.
+      await reapplyCompleteProjectRouting(refreshed, previousHostnames, {
+        managedEdgeSyncedByCaller: true,
+      });
+      // A free (*.opsh.io) domain resolves only through Openship Cloud's edge.
+      // reapplyProjectLiveRoutes handles the self-hosted OpenResty side; the
+      // managed edge must be re-registered too or an edited/added free URL
+      // 404s with no signal. Only meaningful once deployed (no live target
+      // otherwise — the next deploy syncs). On failure this sets
+      // meta.edgeUnsynced so the project surfaces "Retry routing" instead of
+      // silently returning a dead URL.
+      if (refreshed.activeDeploymentId) {
+        await syncProjectManagedEdge(refreshed, organizationId, {
+          markOnFailure: true,
+        }).catch((err) =>
+          console.warn(
+            `[updateProject] managed edge sync failed (non-fatal): ${safeErrorMessage(err)}`,
+          ),
+        );
+      }
+    });
   }
 
   // Editing the vercel.json routing (rewrites/redirects/headers) re-applies it to
@@ -1919,10 +1864,9 @@ export async function updateProject(
   // concurrent writers on one vhost can interleave snapshot/rollback, and the
   // loser may restore a file the winner already replaced.
   if (data.routingConfig !== undefined && !routesReapplied) {
-    const forRouting = await repos.project.findById(projectId);
-    if (forRouting) {
+    await withLiveProjectRuntimeMutation(projectId, async (forRouting) => {
       await reapplyCompleteProjectRouting(forRouting, []);
-    }
+    });
   }
 
   if (p.groupId) {

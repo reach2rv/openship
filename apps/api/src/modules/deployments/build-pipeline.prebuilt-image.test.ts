@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findBuildSessionByDeploymentId: vi.fn(),
+  claimBuildExecution: vi.fn(),
+  cancelUnclaimedBuild: vi.fn(),
+  acknowledgeBuildExecutionFinished: vi.fn(),
   updateDeploymentStatus: vi.fn(),
   updateBuildSession: vi.fn(),
   findDeploymentById: vi.fn(),
@@ -37,6 +40,10 @@ vi.mock("@repo/db", () => ({
     deployment: {
       findBuildSessionByDeploymentId: (...args: unknown[]) =>
         mocks.findBuildSessionByDeploymentId(...args),
+      claimBuildExecution: (...args: unknown[]) => mocks.claimBuildExecution(...args),
+      cancelUnclaimedBuild: (...args: unknown[]) => mocks.cancelUnclaimedBuild(...args),
+      acknowledgeBuildExecutionFinished: (...args: unknown[]) =>
+        mocks.acknowledgeBuildExecutionFinished(...args),
       updateStatus: (...args: unknown[]) => mocks.updateDeploymentStatus(...args),
       updateBuildSession: (...args: unknown[]) => mocks.updateBuildSession(...args),
       findById: (...args: unknown[]) => mocks.findDeploymentById(...args),
@@ -348,6 +355,9 @@ describe("single-app prebuilt release-image pipeline", () => {
     resolvedRuntime = adapter;
 
     mocks.findBuildSessionByDeploymentId.mockResolvedValue({ id: "build-session-1" });
+    mocks.claimBuildExecution.mockResolvedValue("claimed");
+    mocks.cancelUnclaimedBuild.mockResolvedValue(true);
+    mocks.acknowledgeBuildExecutionFinished.mockResolvedValue(undefined);
     mocks.updateDeploymentStatus.mockResolvedValue(undefined);
     mocks.updateBuildSession.mockResolvedValue(undefined);
     mocks.setDeploymentStatus.mockResolvedValue(undefined);
@@ -425,6 +435,9 @@ describe("single-app prebuilt release-image pipeline", () => {
   it("pulls the frozen image, skips every source-build path, deploys it as prebuilt, and freezes the digest", async () => {
     await run();
     await vi.waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledWith("build-session-1"),
+    );
 
     expect(mocks.prepareImage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -455,6 +468,16 @@ describe("single-app prebuilt release-image pipeline", () => {
         metaPatch: expect.objectContaining({ releaseImageRef: RESOLVED_IMAGE }),
       }),
     );
+  });
+
+  it("does not start a worker when deletion or another kickoff owns the execution claim", async () => {
+    mocks.claimBuildExecution.mockResolvedValue("state_changed");
+
+    await expect(kickoffBuild(project(), deployment())).resolves.toBe("build-session-1");
+
+    expect(mocks.prepareImage).not.toHaveBeenCalled();
+    expect(mocks.onSuccess).not.toHaveBeenCalled();
+    expect(mocks.acknowledgeBuildExecutionFinished).not.toHaveBeenCalled();
   });
 
   it("inventories migrated edge routes before reserving a loopback host port", async () => {

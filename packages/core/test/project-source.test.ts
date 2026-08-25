@@ -212,6 +212,8 @@ describe("validateImageReference", () => {
     "GHCR.IO/acme/api:v1.2.3",
     "registry.example.com:5000/team/api:release_1.2.3",
     "localhost:5000/team/api:dev",
+    "[::1]/team/api:dev",
+    "[2001:DB8::1]:5000/team/api:dev",
     "[2001:db8::1]:5000/team/api:dev",
     `ghcr.io/acme/api@sha256:${"a".repeat(64)}`,
     `ghcr.io/acme/api:v1@sha256:${"b".repeat(64)}`,
@@ -229,6 +231,10 @@ describe("validateImageReference", () => {
     ["ghcr.io/_acme/api:v1", /invalid repository path/],
     ["registry.example.com:0/acme/api:v1", /outside 1-65535/],
     ["registry.example.com:not-a-port/acme/api:v1", /non-numeric registry port/],
+    ["[:::]:5000/acme/api:v1", /invalid bracketed IPv6/],
+    ["[2001:db8::1::2]:5000/acme/api:v1", /invalid bracketed IPv6/],
+    ["[1:2:3:4:5:6:7:8:9]:5000/acme/api:v1", /invalid bracketed IPv6/],
+    ["[::ffff:192.0.2.1]:5000/acme/api:v1", /invalid bracketed IPv6/],
     ["ghcr.io/acme/api:", /empty tag/],
     ["ghcr.io/acme/api:-v1", /invalid tag/],
     [`ghcr.io/acme/api:${"a".repeat(129)}`, /invalid tag/],
@@ -330,6 +336,21 @@ describe("renderReleaseImage", () => {
         tag: "release/1.2.3",
       }),
     ).toThrow(/invalid tag|invalid repository path/);
+  });
+
+  it("never interprets placeholders embedded in resolved release metadata", () => {
+    expect(() =>
+      renderReleaseImage("ghcr.io/acme/api:{version}", {
+        version: "v1{tag}",
+        tag: "unexpected",
+      }),
+    ).toThrow(/invalid tag/);
+    expect(() =>
+      renderReleaseImage("ghcr.io/acme/api:{tag}", {
+        version: "1.2.3",
+        tag: "release-{version}",
+      }),
+    ).toThrow(/invalid tag/);
   });
 
   it("requires both resolved release identities", () => {

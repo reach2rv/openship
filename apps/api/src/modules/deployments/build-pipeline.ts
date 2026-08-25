@@ -218,8 +218,14 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
   if (!buildSession) return null;
 
-  // Flip the row to "building" SYNCHRONOUSLY before firing the async
-  // `executeBuildAndDeploy`. Without this, callers that chain
+  // Claim the durable execution lease SYNCHRONOUSLY before firing the async
+  // `executeBuildAndDeploy`. This both prevents duplicate kickoff and closes the
+  // create-session/delete gap: the claim locks the same live project row as
+  // teardown, then atomically changes queued→building and stamps
+  // build_session.startedAt. If deletion or another kickoff won, absolutely no
+  // worker is launched from this stale caller.
+  //
+  // Without the synchronous queued→building transition, callers that chain
   // `redeployBuildSession` → `startBuild` (the dashboard does this on
   // every redeploy, see [build/[id]/page.tsx][1]) hit a race:
   //
@@ -235,25 +241,49 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
   //      stream - which is what users were seeing.
   //
   // [1]: apps/dashboard/src/app/(dashboard)/(deployment)/build/[id]/page.tsx
-  await repos.deployment.updateStatus(dep.id, "building").catch(() => {
-    // Best effort - if this fails, the worst case is the old race
-    // returns. executeBuildAndDeploy will set the status itself when it
-    // starts.
+  const claimed = await repos.deployment.claimBuildExecution({
+    deploymentId: dep.id,
+    buildSessionId: buildSession.id,
+    projectId: project.id,
+    organizationId: dep.organizationId,
   });
+  if (claimed === "state_changed") return buildSession.id;
+  if (claimed === "project_unavailable") {
+    await repos.deployment.cancelUnclaimedBuild({
+      deploymentId: dep.id,
+      buildSessionId: buildSession.id,
+      projectId: project.id,
+    });
+    throw new Error("Deployment could not start because the project is being deleted");
+  }
   dep.status = "building";
 
   sessionManager.createSession(dep.id, project.id);
 
-  void executeBuildAndDeploy(project, dep, buildSession.id).catch(async (err) => {
-    console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
-    // executeBuildAndDeploy's inner try/catch only arms onFailure() after
-    // snapshot + route state resolve. Anything that throws before that
-    // (missing snapshot, route lookup crash, runtime resolution) would
-    // otherwise leave the row queued forever - this guarantees the
-    // deployment is marked failed and the SSE stream gets a closing
-    // message.
-    await markDeploymentFailedFromOutside(dep.id, err);
-  });
+  void (async () => {
+    try {
+      await executeBuildAndDeploy(project, dep, buildSession.id);
+    } catch (err) {
+      console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
+      // executeBuildAndDeploy's inner try/catch only arms onFailure() after
+      // snapshot + route state resolve. Anything that throws before that
+      // (missing snapshot, route lookup crash, runtime resolution) would
+      // otherwise leave the row queued forever - this guarantees the
+      // deployment is marked failed and the SSE stream gets a closing
+      // message.
+      await markDeploymentFailedFromOutside(dep.id, err);
+    } finally {
+      // This is the quiescence acknowledgement used by project teardown. It is
+      // deliberately later than every lifecycle hook, cleanup, transport
+      // disposal, and fallback error write. A `cancelled` status by itself does
+      // not prove the deploy-phase worker stopped touching the host.
+      await repos.deployment
+        .acknowledgeBuildExecutionFinished(buildSession.id)
+        .catch((err) =>
+          console.error(`[DEPLOY] Failed to acknowledge worker completion for ${dep.id}:`, err),
+        );
+    }
+  })();
 
   return buildSession.id;
 }
@@ -291,7 +321,6 @@ async function markDeploymentFailedFromOutside(
       await repos.deployment
         .updateBuildSession(buildSession.id, {
           status: "failed",
-          finishedAt: new Date(),
         })
         .catch(() => {});
     }
@@ -674,7 +703,6 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
 
     await repos.deployment.updateBuildSession(buildSessionId, {
       status: "building",
-      startedAt: new Date(),
     });
     await setDeploymentStatus(dep.id, "building");
 

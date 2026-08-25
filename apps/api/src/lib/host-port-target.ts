@@ -79,6 +79,13 @@ function fingerprint(
   return createHash("sha256").update(`${source}\0${value}`, "utf8").digest("hex");
 }
 
+/** Immutable identity for the SSH endpoint recorded in a server row. Unlike a
+ *  server id, this changes when that row is repointed, so deferred destructive
+ *  work can fail closed instead of following the alias to another machine. */
+export function connectionHostPortTargetKey(locator: HostPortConnectionLocator): HostPortTargetKey {
+  return `host:${fingerprint("connection", normalizeHostPortConnectionLocator(locator))}`;
+}
+
 async function readValidatedTargetId(
   executor: CommandExecutor,
 ): Promise<{ source: "machine-id" | "openship-host-id"; value: string } | null> {
@@ -177,7 +184,7 @@ export async function resolveHostPortTargetIdentity(input: {
   }
   const physicalFingerprint = stableId
     ? fingerprint(stableId.source, stableId.value)
-    : fingerprint("connection", normalizeHostPortConnectionLocator(input.connection));
+    : connectionHostPortTargetKey(input.connection).slice("host:".length);
 
   return {
     targetKey: `host:${physicalFingerprint}`,

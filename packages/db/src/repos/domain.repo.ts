@@ -1,7 +1,7 @@
 import { eq, and, ne, lt, asc, inArray, sql } from "drizzle-orm";
-import { generateId } from "@repo/core";
+import { ConflictError, generateId } from "@repo/core";
 import type { Database } from "../client";
-import { domain, project, service } from "../schema";
+import { domain, orphanedResource, project, service } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -39,9 +39,9 @@ export function createDomainRepo(db: Database) {
    * Insert a row and return it as the DB actually stored it.
    *
    * `{ ...values } as Domain` was a lie for every column the caller didn't pass:
-   * `sslStatus`, `status`, `verified`, `verifyAttempts`, `externalIngress`,
-   * `manualSsl` and `ownerType` are NOT-NULL columns with DB DEFAULTS, so the
-   * returned object satisfied the type while carrying `undefined` for each of
+   * `sslStatus`, `sslChallenge`, `status`, `verified`, `verifyAttempts`,
+   * `externalIngress`, `manualSsl` and `ownerType` are NOT-NULL columns with DB
+   * DEFAULTS, so the returned object satisfied the type while carrying `undefined`
    * them. Readers that compare against the default then quietly take the wrong
    * branch — the deploy's first-issuance gate asks `row.sslStatus === "none"`, got
    * `undefined === "none"` → false, and skipped the certificate for every
@@ -51,7 +51,29 @@ export function createDomainRepo(db: Database) {
    * as the schema's defaults change.
    */
   async function insertAndRead(row: NewDomain & { id: string }): Promise<Domain> {
-    await db.insert(domain).values(row);
+    await db.transaction(async (tx) => {
+      await tx.insert(domain).values(row);
+      // A force-deleted project's route orphan owns the hostname until its
+      // physical vhost and managed registration are actually reclaimed. Check
+      // AFTER the unique domain insert: if this insert waited for the old
+      // project's cascade delete, READ COMMITTED now sees the orphan persisted
+      // immediately before it. Rolling back keeps GC from deleting a reused host.
+      const [pendingCleanup] = await tx
+        .select({ id: orphanedResource.id })
+        .from(orphanedResource)
+        .where(
+          and(
+            eq(orphanedResource.resourceType, "route"),
+            eq(orphanedResource.ref, row.hostname.toLowerCase()),
+          ),
+        )
+        .limit(1);
+      if (pendingCleanup) {
+        throw new ConflictError(
+          `Hostname ${row.hostname} is still being cleaned up from a deleted project`,
+        );
+      }
+    });
     // NON-THROWING on purpose. The INSERT has already landed, so a rejecting
     // read-back (connection blip, statement timeout, pool exhaustion) must not
     // turn a SUCCESSFUL create into a create failure — the caller would then
@@ -104,10 +126,7 @@ export function createDomainRepo(db: Database) {
      * `limit`/`offset` and a deterministic order. The default (no
      * args) keeps the every-row contract for the internal callers.
      */
-    async listByProject(
-      projectId: string,
-      opts?: { limit?: number; offset?: number },
-    ) {
+    async listByProject(projectId: string, opts?: { limit?: number; offset?: number }) {
       return db.query.domain.findMany({
         where: eq(domain.projectId, projectId),
         ...(opts?.limit !== undefined ? { limit: opts.limit } : {}),
@@ -145,10 +164,7 @@ export function createDomainRepo(db: Database) {
      */
     async findByHostnameForProject(projectId: string, hostname: string) {
       return db.query.domain.findFirst({
-        where: and(
-          eq(domain.projectId, projectId),
-          eq(domain.hostname, hostname.toLowerCase()),
-        ),
+        where: and(eq(domain.projectId, projectId), eq(domain.hostname, hostname.toLowerCase())),
       });
     },
 
@@ -159,7 +175,11 @@ export function createDomainRepo(db: Database) {
      * Feeds the audit feed's search: a domain row stores `dom_…`, so "example.com"
      * only finds it once the hostname is resolved to ids.
      */
-    async searchIdsByHostname(organizationId: string, term: string, limit = 200): Promise<string[]> {
+    async searchIdsByHostname(
+      organizationId: string,
+      term: string,
+      limit = 200,
+    ): Promise<string[]> {
       const rows = await db
         .select({ id: domain.id })
         .from(domain)
@@ -198,12 +218,7 @@ export function createDomainRepo(db: Database) {
         .select({ hostname: domain.hostname })
         .from(domain)
         .innerJoin(project, eq(domain.projectId, project.id))
-        .where(
-          and(
-            eq(project.organizationId, organizationId),
-            sql`${project.deletedAt} IS NULL`,
-          ),
-        );
+        .where(and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`));
       return rows.map((r) => r.hostname);
     },
 
@@ -247,12 +262,7 @@ export function createDomainRepo(db: Database) {
         })
         .from(domain)
         .innerJoin(project, eq(domain.projectId, project.id))
-        .where(
-          and(
-            eq(project.organizationId, organizationId),
-            sql`${project.deletedAt} IS NULL`,
-          ),
-        )
+        .where(and(eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`))
         .orderBy(asc(project.name), asc(domain.hostname));
     },
 
@@ -336,7 +346,8 @@ export function createDomainRepo(db: Database) {
           // just get the flag, there are no siblings to demote.
           if (existing.projectId) await promotePrimary(existing.projectId, existing.id);
           else {
-            await db.update(domain)
+            await db
+              .update(domain)
               .set({ isPrimary: true, updatedAt: new Date() })
               .where(eq(domain.id, existing.id));
           }
@@ -467,11 +478,7 @@ export function createDomainRepo(db: Database) {
      * (so a still-propagating domain stays `pending`, a misconfigured one
      * eventually reads `failed`). Returns the new attempt count.
      */
-    async recordVerifyFailure(
-      id: string,
-      error: string,
-      failAfter = 8,
-    ): Promise<number> {
+    async recordVerifyFailure(id: string, error: string, failAfter = 8): Promise<number> {
       const row = await db.query.domain.findFirst({ where: eq(domain.id, id) });
       const attempts = (row?.verifyAttempts ?? 0) + 1;
       await db
@@ -549,10 +556,7 @@ export function createDomainRepo(db: Database) {
     /** Find all domains needing SSL renewal */
     async findExpiringSsl(beforeDate: Date) {
       return db.query.domain.findMany({
-        where: and(
-          eq(domain.sslStatus, "active"),
-          lt(domain.sslExpiresAt, beforeDate),
-        ),
+        where: and(eq(domain.sslStatus, "active"), lt(domain.sslExpiresAt, beforeDate)),
       });
     },
 
@@ -595,7 +599,11 @@ export function createDomainRepo(db: Database) {
           ),
         );
       }
-      return db.select().from(domain).where(and(...conds)).limit(limit);
+      return db
+        .select()
+        .from(domain)
+        .where(and(...conds))
+        .limit(limit);
     },
 
     async findPendingVerification(

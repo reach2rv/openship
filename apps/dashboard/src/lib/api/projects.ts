@@ -578,7 +578,12 @@ export const projectsApi = {
    *  (Cloudflare Tunnel / LB): verify via TXT only, no certbot, plain-HTTP route. */
   connectDomain: (
     id: string | number,
-    body: { domain: string; includeWww: boolean; externalIngress?: boolean },
+    body: {
+      domain: string;
+      includeWww: boolean;
+      externalIngress?: boolean;
+      sslChallenge?: "http-01" | "dns-01";
+    },
   ) => api.post<any>(endpoints.projects.connect(id), body),
 
   /**
