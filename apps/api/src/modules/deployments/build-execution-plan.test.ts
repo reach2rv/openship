@@ -135,6 +135,18 @@ describe("resolveBuildRuntimeModes (pre-resolve flip, as data)", () => {
     }
   });
 
+  it("file prebuilt (no image ref) does not force Docker — bare can unpack a zip", () => {
+    expect(
+      resolveBuildRuntimeModes({
+        workload: "web",
+        serverId: "srv_1",
+        baseTarget: "selfhosted",
+        effectiveTarget: "server",
+        willRunServices: false,
+      }),
+    ).toEqual({ buildRuntimeMode: undefined, serveRuntimeMode: undefined });
+  });
+
   it("prebuilt single-app image → Docker locally/remotely, Cloud unchanged", () => {
     for (const [baseTarget, effectiveTarget] of [
       ["desktop", "local"],

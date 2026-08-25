@@ -8,8 +8,10 @@ import { encodeUploadSlug } from "@/utils/repoSlug";
 import { folderApi } from "@/lib/api/folder";
 import { frameworks, type FrameworkConfig } from "@/components/import-project/Frameworks";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { usePlatform } from "@/context/PlatformContext";
 
 type Phase = "idle" | "packing" | "uploading";
+type UploadKind = "source" | "artifact";
 
 interface Picked {
   files: File[];
@@ -27,27 +29,46 @@ function detectPackageManager(paths: Set<string>): string {
 }
 
 /**
- * Folder-upload entry: the user first picks the stack (reusing the framework
- * grid — no auto-detection), which fixes the build image up front, then uploads
- * the folder. We pack in the browser, open a session, upload straight to the
- * build workspace (SaaS) or the API (self-hosted), and hand off to the deploy
- * wizard seeded from the chosen stack.
+ * Folder-upload entry: pick the stack, then source folder or a prebuilt package
+ * (zip / publish output). Artifact uploads skip the SDK rebuild on the host.
  */
 export function FolderUpload() {
   const { t } = useI18n();
+  const { deployMode } = usePlatform();
   const router = useRouter();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+  const zipRef = useRef<HTMLInputElement>(null);
   const [stack, setStack] = useState<FrameworkConfig | null>(null);
+  const [kind, setKind] = useState<UploadKind>("source");
   const [picked, setPicked] = useState<Picked | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
 
   const busy = phase !== "idle";
+  const artifact = kind === "artifact";
+  const cloudBareWarn = artifact && deployMode === "cloud";
 
-  const handleFiles = useCallback(async (fileList: FileList | File[]) => {
+  const handleFiles = useCallback(async (fileList: FileList | File[], asArtifact: boolean) => {
     setError("");
-    const entries = collectFolderFiles(fileList);
+    const list = Array.from(fileList);
+    const zipOnly =
+      asArtifact &&
+      list.length === 1 &&
+      !!list[0] &&
+      list[0].name.toLowerCase().endsWith(".zip");
+
+    if (zipOnly && list[0]) {
+      setPicked({
+        files: list,
+        name: list[0].name.replace(/\.zip$/i, "") || "app",
+        packageManager: "dotnet",
+        fileCount: 1,
+      });
+      return;
+    }
+
+    const entries = collectFolderFiles(fileList, { artifact: asArtifact });
     if (entries.length === 0) {
       setError(t.library.folderUpload.emptyFolder);
       return;
@@ -68,18 +89,23 @@ export function FolderUpload() {
     }
     if (!name) {
       const rel = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath ?? "";
-      name = rel.split("/")[0] || "app";
+      name = rel.split("/")[0] || list[0]?.name?.replace(/\.(zip|tar\.gz|tgz)$/i, "") || "app";
     }
 
-    setPicked({ files, name, packageManager: detectPackageManager(relPaths), fileCount: entries.length });
-  }, []);
+    setPicked({
+      files,
+      name,
+      packageManager: asArtifact ? "dotnet" : detectPackageManager(relPaths),
+      fileCount: entries.length,
+    });
+  }, [t.library.folderUpload.emptyFolder]);
 
   const handleDeploy = async () => {
     if (!picked || !stack) return;
     setError("");
     try {
       setPhase("packing");
-      const { blob } = await buildFolderTarGz(picked.files);
+      const { blob } = await buildFolderTarGz(picked.files, { artifact });
 
       setPhase("uploading");
       const session = await folderApi.createSession({
@@ -90,6 +116,7 @@ export function FolderUpload() {
       await folderApi.upload(session, blob);
 
       const params = new URLSearchParams({ stack: stack.id, name: picked.name });
+      if (artifact) params.set("artifact", "1");
       router.push(`/deploy/${encodeUploadSlug(session.sessionId)}?${params.toString()}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t.library.folderUpload.uploadError);
@@ -100,10 +127,9 @@ export function FolderUpload() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    if (e.dataTransfer.files?.length) void handleFiles(e.dataTransfer.files);
+    if (e.dataTransfer.files?.length) void handleFiles(e.dataTransfer.files, artifact);
   };
 
-  // ── Step 1: pick the stack ──────────────────────────────────────────────
   if (!stack) {
     return (
       <div className="bg-card rounded-2xl border border-border/50 p-6">
@@ -133,13 +159,12 @@ export function FolderUpload() {
     );
   }
 
-  // ── Step 2: pick the folder ─────────────────────────────────────────────
   return (
     <div className="bg-card rounded-2xl border border-border/50">
       <div className="px-5 py-4 border-b border-border/50 flex items-center gap-3">
         {!busy && (
           <button
-            onClick={() => { setStack(null); setPicked(null); setError(""); }}
+            onClick={() => { setStack(null); setPicked(null); setError(""); setKind("source"); }}
             className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
             aria-label={t.library.folderUpload.backToStack}
           >
@@ -151,40 +176,95 @@ export function FolderUpload() {
         </div>
         <div>
           <h2 className="font-semibold text-foreground text-[15px]">{interpolate(t.library.folderUpload.uploadTitle, { stack: stack.name })}</h2>
-          <p className="text-xs text-muted-foreground">{t.library.folderUpload.uploadSubtitle}</p>
+          <p className="text-xs text-muted-foreground">
+            {artifact ? t.library.folderUpload.artifactSubtitle : t.library.folderUpload.uploadSubtitle}
+          </p>
         </div>
       </div>
 
       <div className="px-5 py-4">
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => { setKind("source"); setPicked(null); setError(""); }}
+            className={`rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+              kind === "source" ? "border-primary bg-primary/5" : "border-border/50 hover:bg-muted/40"
+            }`}
+          >
+            <p className="font-medium text-foreground">{t.library.folderUpload.kindSource}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t.library.folderUpload.kindSourceDesc}</p>
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => { setKind("artifact"); setPicked(null); setError(""); }}
+            className={`rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+              kind === "artifact" ? "border-primary bg-primary/5" : "border-border/50 hover:bg-muted/40"
+            }`}
+          >
+            <p className="font-medium text-foreground">{t.library.folderUpload.kindArtifact}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t.library.folderUpload.kindArtifactDesc}</p>
+          </button>
+        </div>
+
+        {cloudBareWarn && (
+          <p className="text-xs text-warning mb-3">{t.library.folderUpload.cloudBareWarn}</p>
+        )}
+
         {!picked ? (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
-            onClick={() => fileRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
               dragging ? "border-primary bg-primary/5" : "border-border/60 hover:border-border hover:bg-muted/30"
             }`}
           >
             <input
-              ref={fileRef}
+              ref={folderRef}
               type="file"
               className="hidden"
               /* @ts-expect-error webkitdirectory is non-standard */
               webkitdirectory=""
               directory=""
               multiple
-              onChange={(e) => e.target.files && void handleFiles(e.target.files)}
+              onChange={(e) => e.target.files && void handleFiles(e.target.files, artifact)}
+            />
+            <input
+              ref={zipRef}
+              type="file"
+              className="hidden"
+              accept=".zip,application/zip"
+              onChange={(e) => e.target.files && void handleFiles(e.target.files, true)}
             />
             <div className="w-10 h-10 rounded-xl bg-foreground/[0.06] flex items-center justify-center mx-auto mb-2">
               <Upload className="size-5 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground mb-0.5">
-              {t.library.folderUpload.dropTitle}
+              {artifact ? t.library.folderUpload.dropArtifactTitle : t.library.folderUpload.dropTitle}
             </p>
-            <p className="text-xs text-muted-foreground">
-              {interpolate(t.library.folderUpload.dropSubtitle, { stack: stack.name })}
+            <p className="text-xs text-muted-foreground mb-4">
+              {interpolate(artifact ? t.library.folderUpload.dropArtifactSubtitle : t.library.folderUpload.dropSubtitle, { stack: stack.name })}
             </p>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => folderRef.current?.click()}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:bg-muted"
+              >
+                {t.library.folderUpload.browseFolder}
+              </button>
+              {artifact && (
+                <button
+                  type="button"
+                  onClick={() => zipRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:bg-muted"
+                >
+                  {t.library.folderUpload.browseZip}
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-4">

@@ -148,12 +148,14 @@ describe("BareRuntime persistent paths", () => {
     expect(removed).toHaveLength(0);
   });
 
-  it("keeps the adopt path clear of it (no release tree to link into)", async () => {
-    const { executor, calls } = makeExecutor();
+  it("fails the deploy when a declared persistent path cannot be linked", async () => {
+    const { executor } = makeExecutor();
+    (executor.exec as ReturnType<typeof vi.fn>).mockImplementation(async (command: string) => {
+      if (command.startsWith("ln -sfn")) throw new Error("EACCES");
+      return "";
+    });
     const rt = new BareRuntime({ workDir: WORK, executor });
 
-    await deploy(rt, { ...config(["storage:/app/storage"]), adopt: true } as DeployConfig);
-
-    expect(calls.some((c) => c.startsWith("ln -sfn"))).toBe(false);
+    await expect(rt.deploy(config(["uploads:/app/uploads"]))).rejects.toThrow(/Could not persist uploads/);
   });
 });

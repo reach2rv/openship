@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../../lib/request-context";
 import { parseRevealKeys, pickRevealed } from "../../../lib/env-reveal";
 import { requestApiPublicUrl } from "../../../lib/public-url";
@@ -83,7 +83,8 @@ export async function scanSession(c: Context) {
     const result = await scanFolderSession(session);
     return c.json({ success: true, sessionId, ...projectInfoToScanResponse(result) });
   } catch (err) {
-    return c.json({ error: safeErrorMessage(err) }, 500);
+    const status = err instanceof AppError ? err.statusCode : 500;
+    return c.json({ error: safeErrorMessage(err) }, status);
   }
 }
 

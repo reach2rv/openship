@@ -237,8 +237,8 @@ export class BareRuntime implements RuntimeAdapter {
    * `framework/cache`, `framework/sessions`, …) and an app handed an empty
    * directory instead would fail on write.
    *
-   * Best-effort per path: a box without the shared dir writable is a storage
-   * problem to report, not a reason to fail an otherwise good release.
+   * A missing shared dir is a failed deploy: starting the process on an empty
+   * replacement path looks healthy and silently drops customer files.
    */
   private async linkPersistentPaths(
     releaseDir: string,
@@ -273,11 +273,7 @@ export class BareRuntime implements RuntimeAdapter {
           level: "info",
         });
       } catch (err) {
-        log?.({
-          timestamp: new Date().toISOString(),
-          message: `Could not persist ${relative}: ${safeErrorMessage(err)}\n`,
-          level: "warn",
-        });
+        throw new Error(`Could not persist ${relative}: ${safeErrorMessage(err)}`);
       }
     }
   }
@@ -450,9 +446,12 @@ export class BareRuntime implements RuntimeAdapter {
         logger: log,
         abort: abort.signal,
         preflight: async (cfg, plog, localExec) => {
-          await this.ensureToolchain(localExec, cfg.stack, plog);
-          plog.log("Checking runtime tools on target server...\n");
-          await this.ensureToolchain(this.executor, cfg.stack, plog);
+          const skipBuild = !cfg.installCommand?.trim() && !cfg.buildCommand?.trim();
+          if (!skipBuild) {
+            await this.ensureToolchain(localExec, cfg.stack, plog);
+            plog.log("Checking runtime tools on target server...\n");
+            await this.ensureToolchain(this.executor, cfg.stack, plog);
+          }
           if (this.systemManager) {
             plog.log("Ensuring rsync is installed on target server...\n");
             await this.systemManager.ensureComponents(["rsync"], (entry) => plog.callback(entry));
@@ -580,7 +579,10 @@ export class BareRuntime implements RuntimeAdapter {
       },
       preflight: async (cfg, plog) => {
         if (abort.signal.aborted) throw new BuildCancelledError();
-        await this.ensureToolchain(this.executor, cfg.stack, plog);
+        const skipBuild = !cfg.installCommand?.trim() && !cfg.buildCommand?.trim();
+        if (!skipBuild) {
+          await this.ensureToolchain(this.executor, cfg.stack, plog);
+        }
         if (cfg.localPath) {
           await this.transferFiles(cfg.localPath, dir, plog);
         }

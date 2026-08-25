@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./stacks";
 export * from "./volumes";
+export * from "./zip-archive";
 export * from "./compose-namespace";
 export * from "./compose-spec";
 export * from "./object-storage";

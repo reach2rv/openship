@@ -1064,12 +1064,14 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   useEffect(() => {
     if (config.projectId || runtimeDefaultedRef.current) return;
     if (config.deployTarget !== "server") return;
+    if (config.buildKind === "prebuilt") return;
     if (workloadOf(config.options) === "static" || config.projectType === "docker" || isServiceDeployment) return;
     runtimeDefaultedRef.current = true;
     if (config.runtimeMode !== "docker") updateConfig({ runtimeMode: "docker" });
   }, [
     config.projectId,
     config.deployTarget,
+    config.buildKind,
     config.options.hasServer,
     config.options.workloadType,
     config.projectType,

@@ -1027,9 +1027,12 @@ const UNAMBIGUOUS_UPLOAD_EXCLUDES: ReadonlySet<string> = new Set(
   TRANSFER_EXCLUDES.filter((name) => !PACKAGE_ROOT_ONLY_EXCLUDES.includes(name)),
 );
 
-export function isUploadIgnoredPath(relativePath: string): boolean {
+export function isUploadIgnoredPath(relativePath: string, opts?: { artifact?: boolean }): boolean {
   const segments = relativePath.split("/").filter(Boolean);
   if (segments.length === 0) return false;
+  if (opts?.artifact) {
+    return segments.some((seg) => seg === ".git");
+  }
   // Unambiguous excludes anywhere in the path.
   if (segments.some((seg) => UNAMBIGUOUS_UPLOAD_EXCLUDES.has(seg))) return true;
   // Ambiguous excludes only when they are the top-level entry.

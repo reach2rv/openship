@@ -54,7 +54,17 @@
     "clearSelection": "Seçimi temizle",
     "packing": "Klasör paketleniyor…",
     "uploading": "Yükleniyor…",
-    "continue": "Devam et"
+    "continue": "Devam et",
+    "kindSource": "Source folder",
+    "kindSourceDesc": "Upload the project and build it on the server",
+    "kindArtifact": "Prebuilt package",
+    "kindArtifactDesc": "Upload a linux dotnet publish zip or folder — no rebuild",
+    "artifactSubtitle": "Publish output is kept as-is. The host runs it with the .NET runtime.",
+    "dropArtifactTitle": "Drop a publish zip or folder, or browse",
+    "dropArtifactSubtitle": "Linux-x64 or linux-arm64 output for {stack}. Windows zips are refused.",
+    "browseFolder": "Choose folder",
+    "browseZip": "Choose zip",
+    "cloudBareWarn": "Cloud workspaces cannot run a bare host process. Deploy this package to a self-hosted Linux server."
   },
   "localProjects": {
     "title": "Yerel Projeler",

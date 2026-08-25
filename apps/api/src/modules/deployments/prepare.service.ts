@@ -654,7 +654,7 @@ async function readProjectSnapshot(
   // project in a solution wrongly becomes its own deployable app.
   await Promise.all(
     files
-      .filter((file) => /\.(sln|csproj|fsproj)$/i.test(file.name))
+      .filter((file) => /\.(sln|csproj|fsproj|runtimeconfig\.json|deps\.json)$/i.test(file.name))
       .map(async (file) => {
         const content = await reader.readText(joinProjectPath(normalizedRootDirectory, file.name));
         if (content) {

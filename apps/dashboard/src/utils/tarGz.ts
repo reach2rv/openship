@@ -1,4 +1,4 @@
-import { isUploadIgnoredPath } from "@repo/core";
+import { inflateZipEntries, isUploadIgnoredPath, isZipBuffer, listZipEntries } from "@repo/core";
 
 /**
  * Build a gzipped tar (.tar.gz) Blob entirely in the browser from a folder the
@@ -74,14 +74,17 @@ export interface FolderFile {
  * leading root-folder segment from each `webkitRelativePath` and drop anything
  * the shared ignore list excludes.
  */
-export function collectFolderFiles(files: FileList | File[]): FolderFile[] {
+export function collectFolderFiles(
+  files: FileList | File[],
+  opts?: { artifact?: boolean },
+): FolderFile[] {
   const out: FolderFile[] = [];
   for (const file of Array.from(files)) {
     const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
     // "myapp/src/index.ts" → "src/index.ts"
     const slash = rel.indexOf("/");
     const path = slash >= 0 ? rel.slice(slash + 1) : rel;
-    if (!path || isUploadIgnoredPath(path)) continue;
+    if (!path || isUploadIgnoredPath(path, { artifact: opts?.artifact })) continue;
     out.push({ path, file });
   }
   return out;
@@ -125,8 +128,21 @@ async function buildTarParts(entries: FolderFile[]): Promise<Uint8Array[]> {
  */
 export async function buildFolderTarGz(
   files: FileList | File[],
+  opts?: { artifact?: boolean },
 ): Promise<{ blob: Blob; fileCount: number }> {
-  const entries = collectFolderFiles(files);
+  const asFiles = Array.from(files);
+  const zipOnly =
+    opts?.artifact &&
+    asFiles.length === 1 &&
+    asFiles[0] &&
+    (asFiles[0].name.toLowerCase().endsWith(".zip") || isZipBuffer(new Uint8Array(await asFiles[0].slice(0, 4).arrayBuffer())));
+
+  let entries: FolderFile[];
+  if (zipOnly && asFiles[0]) {
+    entries = await zipFileToFolderFiles(asFiles[0]);
+  } else {
+    entries = collectFolderFiles(files, opts);
+  }
   if (entries.length === 0) {
     throw new Error("No files to upload after filtering — is the folder empty?");
   }
@@ -138,4 +154,24 @@ export async function buildFolderTarGz(
   const gz = tar.stream().pipeThrough(new CompressionStream("gzip"));
   const blob = await new Response(gz).blob();
   return { blob, fileCount: entries.length };
+}
+
+async function inflateRawBrowser(src: Uint8Array): Promise<Uint8Array> {
+  const ds = new DecompressionStream("deflate-raw");
+  const blob = new Blob([src as BlobPart]);
+  return new Uint8Array(await new Response(blob.stream().pipeThrough(ds)).arrayBuffer());
+}
+
+async function zipFileToFolderFiles(file: File): Promise<FolderFile[]> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const inflated = await inflateZipEntries(listZipEntries(bytes), inflateRawBrowser);
+  return inflated
+    .filter((entry) => !isUploadIgnoredPath(entry.name, { artifact: true }))
+    .map((entry) => {
+      const base = entry.name.split("/").pop() || entry.name;
+      return {
+        path: entry.name,
+        file: new File([entry.data as BlobPart], base),
+      };
+    });
 }

@@ -282,6 +282,10 @@ export const projectsApi = {
     }>;
     hasServer?: boolean;
     hasBuild?: boolean;
+    volumes?: string[];
+    runtimeMode?: "bare" | "docker";
+    buildKind?: "prebuilt" | "dockerfile" | "buildpack" | "static";
+    sourceKind?: "git" | "image" | "upload";
     /** Runtime workload axis (#538) — persists a portless worker; omit to derive. */
     workloadType?: WorkloadType;
     /** Project flavor - "monorepo" persists the sub-app + workspace fields below. */

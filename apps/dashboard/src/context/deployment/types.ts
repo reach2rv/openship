@@ -339,8 +339,8 @@ export interface DeploymentConfig {
   projectName: string;
   repo: string;
   owner: string;
-  /** Git host. Absent / "github" is GitHub. "azure" requires gitProject. */
-  gitProvider?: "github" | "azure";
+  /** Git host. Absent / "github" is GitHub. "azure" requires gitProject. "upload" is folder import. */
+  gitProvider?: "github" | "azure" | "upload";
   /** Azure DevOps project (the middle segment of org/project/repo). */
   gitProject?: string;
   /** Absolute path for local projects (mutually exclusive with owner/repo git source) */
@@ -356,6 +356,10 @@ export interface DeploymentConfig {
   /** Folder-upload deploy: the upload session whose workspace/staging dir holds
    *  the source. Sent to buildAccess so the build adopts that uploaded source. */
   uploadSessionId?: string;
+  /** File artifact (publish zip) — not a container image. Pins bare runtime. */
+  buildKind?: "prebuilt" | "dockerfile" | "buildpack" | "static" | null;
+  /** Persistent app-relative dirs (uploads, reports). Sent as project volumes. */
+  volumes?: string[];
   /** Where the build runs: "server" (default, build in cloud/workspace) or "local" (build on host machine) */
   buildStrategy: BuildStrategy;
   /** Where the app deploys to: "local" (this machine), "server" (remote SSH), or "cloud" (Oblien) */
@@ -463,6 +467,8 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   localPath: undefined,
   composePath: undefined,
   uploadSessionId: undefined,
+  buildKind: null,
+  volumes: undefined,
   buildStrategy: "server",
   deployTarget: "cloud",
   runtimeMode: "docker",
@@ -911,7 +917,7 @@ export interface DeploymentContextType {
    *  (no auto-detection); falls back to the session scan when no stack given. */
   initializeFromUpload: (
     sessionId: string,
-    context?: { projectId?: string; stack?: string; packageManager?: string; name?: string },
+    context?: { projectId?: string; stack?: string; packageManager?: string; name?: string; artifact?: boolean },
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
   /** Config-edit hydration from SAVED project data — no repo re-detection. */
   initializeFromProject: (

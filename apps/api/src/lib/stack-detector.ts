@@ -37,6 +37,7 @@ import {
   type StackDetection,
   type DeploymentMetadata,
 } from "@repo/core";
+import { inspectDotnetPrebuilt } from "./dotnet-prebuilt";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -99,10 +100,17 @@ export function detectPackageManager(
   if (fileSet.has("build.gradle") || fileSet.has("build.gradle.kts")) return "gradle";
   if (fileSet.has("mix.exs")) return "mix";
 
-  // ── .NET (detect via *.csproj or *.fsproj) ──
+  // ── .NET (detect via *.csproj or *.fsproj, or a published runtimeconfig) ──
   for (const f of files) {
     const lower = f.name.toLowerCase();
-    if (lower.endsWith(".csproj") || lower.endsWith(".fsproj") || lower.endsWith(".sln")) return "dotnet";
+    if (
+      lower.endsWith(".csproj") ||
+      lower.endsWith(".fsproj") ||
+      lower.endsWith(".sln") ||
+      lower.endsWith(".runtimeconfig.json")
+    ) {
+      return "dotnet";
+    }
   }
 
   // ── JS/TS lock files (most reliable) ──
@@ -347,12 +355,17 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
           name.endsWith(".csproj") && /Microsoft\.AspNetCore\.Components\.WebAssembly/i.test(content),
       ),
   },
-  // .NET: any project/solution file suffix.
+  // .NET: any project/solution file suffix, or a published runtimeconfig.
   {
     stack: "dotnet",
     fileMatch: (fs) => {
       for (const name of fs) {
-        if (name.endsWith(".csproj") || name.endsWith(".fsproj") || name.endsWith(".sln")) {
+        if (
+          name.endsWith(".csproj") ||
+          name.endsWith(".fsproj") ||
+          name.endsWith(".sln") ||
+          name.endsWith(".runtimeconfig.json")
+        ) {
           return true;
         }
       }
@@ -442,6 +455,7 @@ export function detectStack(
   }
 
   const packageJson = resolvePackageJson(packageJsonInput, fc);
+  const prebuiltDotnet = inspectDotnetPrebuilt(files, fc);
 
   // Merge deps: JS deps come from the parsed package.json, the rest come from
   // language-specific manifest parsers via the registry. The JS detector's
@@ -517,6 +531,14 @@ export function detectStack(
     }
   }
 
+  if (prebuiltDotnet) {
+    const host = prebuiltDotnet.selfContained
+      ? `./${prebuiltDotnet.assembly}`
+      : `dotnet ${prebuiltDotnet.assembly}.dll`;
+    startCommand = `ASPNETCORE_URLS=http://0.0.0.0:$PORT ${host}`;
+    productionPaths = [];
+  }
+
   // Elixir/Phoenix: the mix release is named after the `app` in mix.exs, not a
   // literal "app". Derive it so the start command runs the real release binary.
   // productionPaths stays `_build/prod/rel` (the whole release tree is copied).
@@ -542,11 +564,11 @@ export function detectStack(
     category: stackDef.category,
     dependencies: deps,
     packageManager: pm,
-    installCommand: projectType === "docker" ? "" : getInstallCommand(pm),
-    buildCommand: getBuildCommand(pm, matched, packageJson, files),
+    installCommand: projectType === "docker" || prebuiltDotnet ? "" : getInstallCommand(pm),
+    buildCommand: prebuiltDotnet ? "" : getBuildCommand(pm, matched, packageJson, files),
     startCommand,
     buildImage: getBuildImage(matched, pm),
-    outputDirectory: OUTPUT_DIRECTORIES[matched] ?? "dist",
+    outputDirectory: prebuiltDotnet ? "" : (OUTPUT_DIRECTORIES[matched] ?? "dist"),
     productionPaths,
     port: detectPortFromLanguages({ packageJson, fileContents: fc }) ?? stackDef.defaultPort,
   };

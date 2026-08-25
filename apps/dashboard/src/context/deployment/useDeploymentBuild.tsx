@@ -789,7 +789,14 @@ export function useDeploymentBuild(
               ))
           : undefined,
         hasServer: config.options.hasServer,
-        hasBuild: config.options.hasBuild,
+        hasBuild: config.buildKind === "prebuilt" ? false : config.options.hasBuild,
+        volumes: config.volumes,
+        runtimeMode:
+          config.runtimeMode === "bare" || config.runtimeMode === "docker"
+            ? config.runtimeMode
+            : undefined,
+        buildKind: config.buildKind ?? undefined,
+        sourceKind: isUpload ? "upload" : undefined,
         // Runtime workload (#538): the only way to create a portless worker.
         workloadType: workloadOf(config.options),
         // Rollback retention chosen in the target panel. Only meaningful on a

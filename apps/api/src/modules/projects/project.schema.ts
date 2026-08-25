@@ -413,6 +413,11 @@ export const CreateProjectBody = Type.Object({
   workloadType: Type.Optional(
     Type.Union([Type.Literal("web"), Type.Literal("worker"), Type.Literal("static")]),
   ),
+  /**
+   * Host runtime for a first deploy. Apps default to null (chosen at deploy
+   * time) unless the wizard pins `bare` for a file prebuilt (publish zip).
+   */
+  runtimeMode: Type.Optional(Type.Union([Type.Literal("bare"), Type.Literal("docker")])),
   rollbackWindow: Type.Optional(Type.Number({ minimum: 0, maximum: 20 })),
   /**
    * Cloud archive strategy. Today only "inplace" is implemented

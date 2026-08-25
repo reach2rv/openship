@@ -19,15 +19,24 @@
 
 import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, mkdir, writeFile, readdir, rename, readFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import { promisify } from "node:util";
-import { getBuildImage, safeErrorMessage, type StackId } from "@repo/core";
+import { inflateRawSync } from "node:zlib";
+import {
+  getBuildImage,
+  inflateZipEntries,
+  isGzipBuffer,
+  isZipBuffer,
+  listZipEntries,
+  safeErrorMessage,
+  type StackId,
+} from "@repo/core";
 import { provisionCloudWorkspace } from "@repo/adapters";
 import { env } from "../../../config/env";
 import { getNamespaceClient } from "../../../lib/openship-cloud";
@@ -257,11 +266,12 @@ export async function acceptRelayUpload(
     throw new Error("Session does not accept relay uploads");
   }
 
-  const archivePath = join(session.stagingDir, "__upload.tar.gz");
+  const archivePath = join(session.stagingDir, "__upload.bin");
   await streamToFile(body, archivePath);
 
   try {
-    await safeExtractTarGz(archivePath, session.stagingDir);
+    await extractUploadedArchive(archivePath, session.stagingDir);
+    await unwrapSingleRoot(session.stagingDir);
   } finally {
     await rm(archivePath, { force: true }).catch(() => {});
   }
@@ -270,12 +280,47 @@ export async function acceptRelayUpload(
 }
 
 /**
+ * Extract a client-supplied zip or tar.gz into `destDir`. Zip-Slip names are
+ * rejected before any file is written.
+ */
+export async function extractUploadedArchive(archivePath: string, destDir: string): Promise<void> {
+  const head = await readFile(archivePath);
+  const probe = head.subarray(0, 4);
+  if (isZipBuffer(probe)) {
+    const files = await inflateZipEntries(listZipEntries(head), (src) => inflateRawSync(src));
+    for (const file of files) {
+      const target = join(destDir, file.name);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, file.data);
+    }
+    return;
+  }
+  if (!isGzipBuffer(probe) && probe[0] !== 0x1f) {
+    // Still try tar.gz — some clients send application/gzip without a sniffable
+    // prefix if the stream was wrapped; the tar listing is the real gate.
+  }
+  await safeExtractTarGz(archivePath, destDir);
+}
+
+/** If the archive wrapped a single top-level folder, lift its children up. */
+export async function unwrapSingleRoot(destDir: string): Promise<void> {
+  const entries = (await readdir(destDir, { withFileTypes: true })).filter(
+    (entry) => entry.name !== "__upload.bin" && entry.name !== "__upload.tar.gz",
+  );
+  if (entries.length !== 1 || !entries[0]!.isDirectory()) return;
+  const nested = join(destDir, entries[0]!.name);
+  const children = await readdir(nested);
+  for (const child of children) {
+    await rename(join(nested, child), join(destDir, child));
+  }
+  await rm(nested, { recursive: true, force: true });
+}
+
+/**
  * Extract a tar.gz into `destDir`, defended against path traversal (Zip-Slip).
  * The tarball is client-supplied — an authenticated org member could bypass the
  * browser packer and POST a crafted archive — so we do NOT trust it: list every
  * member first and REJECT any absolute path or `..` component before extracting.
- * This check is independent of the tar implementation's own (varying) safety
- * behavior. Extraction then runs without restoring archive ownership.
  */
 async function safeExtractTarGz(archivePath: string, destDir: string): Promise<void> {
   const { stdout } = await execFileAsync("tar", ["-tzf", archivePath], {

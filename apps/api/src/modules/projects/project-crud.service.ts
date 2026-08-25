@@ -795,9 +795,11 @@ function buildProductionProjectInput(
     // not supported on the bare runtime". Git apps/monorepos stay null (chosen at
     // deploy time).
     runtimeMode:
-      isReleaseImage || data.projectType === "services" || data.projectType === "docker"
-        ? "docker"
-        : null,
+      data.runtimeMode === "bare" || data.runtimeMode === "docker"
+        ? data.runtimeMode
+        : isReleaseImage || data.projectType === "services" || data.projectType === "docker"
+          ? "docker"
+          : null,
   };
 }
 
@@ -1498,6 +1500,9 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     if (data.sourceKind !== undefined) update.sourceKind = data.sourceKind;
     if (data.buildKind !== undefined) update.buildKind = data.buildKind;
     if (data.hasBuild !== undefined) update.hasBuild = data.hasBuild;
+    if (data.runtimeMode === "bare" || data.runtimeMode === "docker") {
+      update.runtimeMode = data.runtimeMode;
+    }
     if (data.projectType === "monorepo" && data.monorepoWorkspace !== undefined) {
       update.workspacePrepareCommand = data.monorepoWorkspace.prepareCommand ?? null;
     }

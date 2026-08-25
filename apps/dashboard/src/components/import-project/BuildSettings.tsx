@@ -494,8 +494,34 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                       </p>
                     </div>
                   </div>
-                  <Toggle checked={hasBuild} onChange={(v: boolean) => updateOptions?.({ hasBuild: v })} />
+                  <Toggle
+                    checked={hasBuild}
+                    onChange={(v: boolean) => {
+                      if (config?.buildKind === "prebuilt") return;
+                      updateOptions?.({ hasBuild: v });
+                    }}
+                  />
                 </div>
+                {(config?.buildKind === "prebuilt" || !hasBuild) && (
+                  <div className="p-2.5 bg-muted/30 rounded-lg border border-border/50 space-y-1.5">
+                    <p className="text-sm font-medium text-foreground">{bs.persistPathsLabel}</p>
+                    <p className="text-xs text-muted-foreground leading-tight">{bs.persistPathsDesc}</p>
+                    <textarea
+                      value={(config?.volumes ?? []).join("\n")}
+                      placeholder={bs.persistPathsPlaceholder}
+                      rows={3}
+                      onChange={(e) =>
+                        updateConfig?.({
+                          volumes: e.target.value
+                            .split(/\r?\n/)
+                            .map((line) => line.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                      className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/60"
+                    />
+                  </div>
+                )}
                 {visibleBuildFields.map(renderInput)}
                 {generalFields.map(renderInput)}
 

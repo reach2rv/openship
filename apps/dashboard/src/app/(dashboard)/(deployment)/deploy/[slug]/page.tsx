@@ -72,6 +72,7 @@ const DeployRepository: React.FC = () => {
     // carry it (and the folder name) so the wizard seeds from the stack defaults.
     const uploadStack = searchParams.get("stack") || undefined;
     const uploadName = searchParams.get("name") || undefined;
+    const uploadArtifact = searchParams.get("artifact") === "1";
     // Edit-from-Runtime-tab: hydrate from SAVED settings, skip repo re-detection.
     const isConfigEdit = searchParams.get("mode") === "config" && !!projectId;
     // Desktop AND self-hosted pick a deploy target (this box / a registered server
@@ -268,6 +269,7 @@ const DeployRepository: React.FC = () => {
                     projectId,
                     stack: uploadStack,
                     name: uploadName,
+                    artifact: uploadArtifact,
                 });
             } else {
                 result = await initializeFromRepo(decoded.owner, decoded.repo, force, {
@@ -335,7 +337,7 @@ const DeployRepository: React.FC = () => {
         };
 
         initialize();
-    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, uploadStack, uploadName, toast, t]);
+    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, uploadStack, uploadName, uploadArtifact, toast, t]);
 
     if (loading) {
         return <SkeletonLoader source={decodedSource} />;
