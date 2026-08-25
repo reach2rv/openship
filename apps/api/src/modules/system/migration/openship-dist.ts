@@ -6,7 +6,7 @@
  * the typed OpenshipReleaseDistMissingError the wizard controller catches.
  */
 
-import type { ReleaseSource } from "@repo/core";
+import { GITHUB_REPO, type ReleaseSource } from "@repo/core";
 import {
   ReleaseDistMissingError,
   apiRootPath,
@@ -33,7 +33,7 @@ import {
  */
 const OPENSHIP_SOURCE: ReleaseSource = {
   mode: "github",
-  repo: "oblien/openship",
+  repo: GITHUB_REPO,
   assetTemplate: "openship-{tag}-linux-amd64.tar.gz",
 };
 

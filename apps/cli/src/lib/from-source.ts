@@ -20,10 +20,11 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { GITHUB_REPO } from "@repo/core";
 import { OS_DIR } from "./paths";
 
 export { OS_DIR };
-export const DEFAULT_REPO = "https://github.com/oblien/openship.git";
+export const DEFAULT_REPO = `https://github.com/${GITHUB_REPO}.git`;
 
 /** The clone `--from-source` builds from, and the dist it builds into. Exported
  *  so `up --dry-run` names the same dirs this module creates. */

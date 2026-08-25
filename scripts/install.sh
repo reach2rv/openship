@@ -13,7 +13,11 @@
 # (API + dashboard); `openship install` fetches the desktop app.
 #
 # Env overrides:
-#   OPENSHIP_VERSION=0.5.0        pin a CLI version (default: latest release)
+#   OPENSHIP_VERSION=0.5.0        pin a CLI version (default: latest *stable* release)
+#   OPENSHIP_REPO=owner/repo      GitHub repo that hosts the release assets
+#                                 (default: reach2rv/openship). Prerelease tags
+#                                 are not returned by /releases/latest — pin
+#                                 OPENSHIP_VERSION when installing one.
 #   OPENSHIP_HOME=~/.openship     install root (data dir, runtime, launcher)
 #   OPENSHIP_CLI_ASSET_URL=…      download the payload tarball from here instead
 #                                 of GitHub (its .sha256 sidecar must sit beside
@@ -23,7 +27,7 @@ set -eu
 info() { printf '\033[36m==>\033[0m %s\n' "$1"; }
 err()  { printf '\033[31merror:\033[0m %s\n' "$1" >&2; }
 
-REPO="oblien/openship"
+REPO="${OPENSHIP_REPO:-reach2rv/openship}"
 NODE_MAJOR=22
 NODE_DIST="https://nodejs.org/dist"
 

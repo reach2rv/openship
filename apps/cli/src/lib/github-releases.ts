@@ -4,9 +4,10 @@
  * All assets are published by .github/workflows/release.yml with a `.sha256`
  * sidecar; callers verify downloads against it.
  */
+import { GITHUB_REPO } from "@repo/core";
 import { parseSha256 } from "./cache";
 
-export const REPO = "oblien/openship";
+export const REPO = GITHUB_REPO;
 export const RELEASES = `https://github.com/${REPO}/releases`;
 const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 

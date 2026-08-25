@@ -45,7 +45,7 @@ const DOWNLOADS: DownloadEntry[] = [
   { platform: "linux",     title: "Linux",   subtitle: "AppImage · x86_64",     icon: LinuxIcon,   fileName: "Openship.AppImage",    size: "98 MB" },
 ];
 
-const DOWNLOAD_BASE = "https://github.com/oblien/openship/releases/latest/download";
+const DOWNLOAD_BASE = "https://github.com/reach2rv/openship/releases/latest/download";
 
 const CLI_OPTIONS = [
   { manager: "macOS / Linux", cmd: "curl -fsSL https://get.openship.io | sh" },

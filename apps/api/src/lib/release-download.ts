@@ -53,6 +53,7 @@ import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { GITHUB_REPO } from "@repo/core";
 import { safeFetch, type SafeFetchResponse } from "./safe-fetch";
 import { assertPublicHostLiteral, SsrfError } from "./ssrf-guard";
 
@@ -63,7 +64,7 @@ const TAR_TIMEOUT_MS = 5 * 60_000;
  *  sha-verify). Generous for real dists; bounds a hostile/oversized response. */
 const MAX_RELEASE_ARTIFACT_BYTES = 512_000_000;
 
-const DEFAULT_REPO = "oblien/openship";
+const DEFAULT_REPO = GITHUB_REPO;
 
 export interface FetchAndExtractReleaseInput {
   /** Release tag / cache key, e.g. "v0.1.0". The extracted dist lives at `<cacheDir>/<tag>/`. */

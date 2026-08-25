@@ -17,7 +17,7 @@
 # needed). Remove with:  rm -f "$(command -v openship-dev)" && rm -rf ~/.openship-dev
 #
 # Env overrides:
-#   OPENSHIP_REPO=<git url>     default: https://github.com/oblien/openship.git
+#   OPENSHIP_REPO=<git url>     default: https://github.com/reach2rv/openship.git
 #   OPENSHIP_REF=<branch|tag>   default: main
 #   OPENSHIP_HOME=<dir>         default: $HOME/.openship-dev
 #   OPENSHIP_SRC_DIR=<dir>      default: $OPENSHIP_HOME/cli-src
@@ -28,7 +28,7 @@ err()  { printf '\033[31merror:\033[0m %s\n' "$1" >&2; }
 
 command -v curl >/dev/null 2>&1 || { err "curl is required"; exit 1; }
 
-REPO="${OPENSHIP_REPO:-https://github.com/oblien/openship.git}"
+REPO="${OPENSHIP_REPO:-https://github.com/reach2rv/openship.git}"
 REF="${OPENSHIP_REF:-main}"
 OPENSHIP_HOME="${OPENSHIP_HOME:-$HOME/.openship-dev}"
 SRC_DIR="${OPENSHIP_SRC_DIR:-$OPENSHIP_HOME/cli-src}"

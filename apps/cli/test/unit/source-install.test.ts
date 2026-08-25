@@ -14,7 +14,7 @@ describe("parseSourceInstall", () => {
     const s = parseSourceInstall(JSON.stringify({ dir: "/tmp/src" }));
     expect(s?.dir).toBe("/tmp/src");
     expect(s?.ref).toBe("main");
-    expect(s?.repo).toBe("https://github.com/oblien/openship.git");
+    expect(s?.repo).toBe("https://github.com/reach2rv/openship.git");
   });
 
   it("returns null without a dir (not a source install)", () => {
