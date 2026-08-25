@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { AppError, safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../../lib/request-context";
 import { parseRevealKeys, pickRevealed } from "../../../lib/env-reveal";
@@ -83,7 +84,9 @@ export async function scanSession(c: Context) {
     const result = await scanFolderSession(session);
     return c.json({ success: true, sessionId, ...projectInfoToScanResponse(result) });
   } catch (err) {
-    const status = err instanceof AppError ? err.statusCode : 500;
+    const status = (
+      err instanceof AppError ? err.statusCode : 500
+    ) as ContentfulStatusCode;
     return c.json({ error: safeErrorMessage(err) }, status);
   }
 }

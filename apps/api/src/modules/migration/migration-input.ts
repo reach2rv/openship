@@ -160,10 +160,17 @@ export function sanitizeRoutes(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/** Validated project-level git source after `sanitizeGitSource`. */
+export type SanitizedGitSource = {
+  provider: "github" | "azure";
+  owner: string;
+  repo: string;
+  project?: string;
+  branch?: string;
+};
+
 /** Validate the optional project-level git source. */
-export function sanitizeGitSource(
-  input: unknown,
-): { provider: "github" | "azure"; owner: string; repo: string; project?: string; branch?: string } | undefined {
+export function sanitizeGitSource(input: unknown): SanitizedGitSource | undefined {
   if (!input || typeof input !== "object") return undefined;
   const g = input as {
     provider?: unknown;

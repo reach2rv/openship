@@ -57,7 +57,7 @@ import {
   withDeploymentPlatform,
 } from "../../lib/deployment-runtime";
 import { establishDirectLink, PathMissingError, statPath, sq } from "./direct-transfer";
-import type { MigrationRouteSpec } from "./migration-input";
+import type { MigrationRouteSpec, SanitizedGitSource } from "./migration-input";
 import { sizeOfMoveSet, volumeBytes } from "./migration-size";
 import { withKeyedMutex } from "../../lib/provision-lock";
 import { requestBuildAccess } from "../deployments/build.service";
@@ -182,7 +182,7 @@ export interface StartMigrationInput {
   /** Optional project-level git repo to link to the migrated project (records
    *  source + binds push auto-deploy). The running image is still reused — no
    *  rebuild during migrate. Absent = no repo linked (today's behavior). */
-  gitSource?: { provider: "github"; owner: string; repo: string; branch?: string };
+  gitSource?: SanitizedGitSource;
   /** serviceName → build subpath inside the linked repo. Metadata only. */
   serviceSubpaths?: Record<string, string>;
   /** DISCOVERED service name → the repo compose service name to adopt the row AS
