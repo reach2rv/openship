@@ -216,9 +216,37 @@ interface TextPatch {
   find: string;
   replace: string;
   label: string;
+  /** Presence of this substring means the patch is already applied. Used when
+   *  `replace` can miss `includes()` because of CRLF vs the in-memory LF source. */
+  sentinel?: string;
 }
 
 const TEXT_PATCHES: TextPatch[] = [
+  // get_all.sh: skip the mirror fetch when pkgs/misc already hashes. wget -c
+  // still contacts the mirror for a complete file; a dead mirror used to abort
+  // the whole installer and, with Docker `|| true`, cache a binary-less image.
+  {
+    file: "pkgs/get_all.sh",
+    find: "prepare_dirs\n\n# Check required commands, and install packages which offer the commands.\n",
+    replace:
+      "prepare_dirs\n\n" +
+      "# Prefer in-tree misc tarballs whose sha256 already matches pkgs.sha256.\n" +
+      "# `wget -c` still contacts IREDMAIL_MIRROR even when the file is complete; a\n" +
+      "# dead or rate-limited mirror aborted get_all.sh, iRedMail.sh exited 255, and\n" +
+      "# Docker's `|| true` cached an image with no mail stack (issue #493).\n" +
+      'if [ X"${status_fetch_misc}" != X"DONE" ] && [ -f "${_ROOTDIR}/${SHASUM_CHECK_FILE}" ]; then\n' +
+      '    if (cd "${_ROOTDIR}" && ${CMD_SHASUM_CHECK} ${SHASUM_CHECK_FILE}); then\n' +
+      '        ECHO_INFO "Using vendored misc tarballs (sha256 already matches ${SHASUM_CHECK_FILE})."\n' +
+      "        echo 'export status_fetch_misc=\"DONE\"' >> ${STATUS_FILE}\n" +
+      "        echo 'export status_verify_downloaded_packages=\"DONE\"' >> ${STATUS_FILE}\n" +
+      '        export status_fetch_misc="DONE"\n' +
+      '        export status_verify_downloaded_packages="DONE"\n' +
+      "    fi\n" +
+      "fi\n\n" +
+      "# Check required commands, and install packages which offer the commands.\n",
+    label: "get_all.sh: skip mirror fetch when vendored tarballs already hash",
+    sentinel: "Using vendored misc tarballs",
+  },
   // fail2ban.sh: redirect stderr on the every-minute cron line so cron
   // doesn't mail root once a minute when fail2ban's psql auth is broken
   // (the real failure surfaces in /var/log/fail2ban.log instead).
@@ -339,7 +367,7 @@ for (const p of TEXT_PATCHES) {
     continue;
   }
   const content = readFileSync(absFile, "utf8");
-  if (content.includes(p.replace)) {
+  if ((p.sentinel && content.includes(p.sentinel)) || content.includes(p.replace)) {
     alreadyPatched++;
     continue;
   }

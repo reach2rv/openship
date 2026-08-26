@@ -15,8 +15,8 @@
 # at runtime; the vmail DB is bootstrapped by the entrypoint against the SIDECAR
 # (127.0.0.1:5432) rather than a local pg. The schema-load path is the remaining
 # runtime seam (see entrypoint.sh) — the installer + package set below ARE
-# validated on a Debian build host and the daemon binaries are asserted at build
-# time by the smoke test after the install step.
+# validated on a Debian build host and the daemon binaries are asserted in the
+# same RUN as the installer (a later layer cannot see a cached empty install).
 #
 # GOTCHA (was issue #493): iRedMail's `check_hostname` aborts with exit 255 unless
 # the hostname is an FQDN. `bash` re-derives $HOSTNAME from the build machine's
@@ -33,10 +33,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Runtime + build prerequisites. supervisor = PID-1 process manager (iRedMail's
 # daemons have no systemd here); postgresql-client + netcat = the entrypoint's
-# wait-for-sidecar + schema bootstrap; the rest are iRedMail.sh's own deps.
+# wait-for-sidecar + schema bootstrap; bash is the installer's shebang (slim's
+# /bin/sh is dash); perl/hostname are get_all.sh check_pkg targets. The rest
+# are iRedMail.sh's own deps.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       supervisor ca-certificates curl gnupg procps rsync cron \
-      netcat-openbsd postgresql-client bsdmainutils \
+      netcat-openbsd postgresql-client bsdmainutils bash hostname perl \
     && rm -rf /var/lib/apt/lists/*
 
 # Stub systemctl/service during the build so iRedMail.sh's `systemctl enable/start`
@@ -57,54 +59,41 @@ COPY apps/email/docker/ /opt/openship-mail/
 # entrypoint overwrites on first boot from the per-install --env-file. The DB
 # itself is NOT created here (no sidecar at build) — the entrypoint loads the
 # schema into the sidecar on first boot.
-# Two things are required for this step to actually install the stack (issue #493):
+# Three things are required for this step to actually install the stack (issue #493):
 #
 #   1. IREDMAIL_HOSTNAME — satisfies check_hostname's FQDN requirement (GOTCHA above).
+#      /etc/hosts is also written so anything that shells out to `hostname -f` agrees.
 #   2. `apt-get update` FIRST — iRedMail's pkgs/get_all.sh installs its own bootstrap
-#      tools (wget, dialog, dirmngr) and fetches the iRedAPD tarball with `wget`
-#      BEFORE it runs its own `apt update`. The base image's Step-3 layer ends with
-#      `rm -rf /var/lib/apt/lists/*`, so without a refresh here that bootstrap install
-#      finds no candidates, `wget` never lands, the tarball fetch dies, and get_all.sh
-#      aborts — leaving the image with no mail stack. We repopulate the lists and
-#      install those bootstrap tools explicitly so the fetch never depends on
-#      get_all.sh's fragile pre-update ordering, then trim the lists again at the end.
+#      tools (wget, dialog, dirmngr) BEFORE it runs its own `apt update`. The previous
+#      layer ends with `rm -rf /var/lib/apt/lists/*`, so without a refresh here that
+#      bootstrap install finds no candidates and get_all.sh aborts.
+#   3. The iRedAPD tarball is VENDORED at pkgs/misc (hashed in pkgs.sha256). get_all.sh
+#      skips the mirror fetch when that checksum already matches — `wget -c` would
+#      still contact dl.iredmail.org for a complete file, and a dead mirror used to
+#      abort the installer entirely.
 #
 # We keep `|| true` on the installer itself because its exit status is NOT a
 # reliable success signal here: with systemd stubbed and no build-time Postgres,
-# late service/DB steps exit non-zero even when every package installed fine. The
-# real gate is the smoke test in the next layer, which fails the build loudly if
-# any daemon binary is missing — so a binary-less image can never ship silently.
-RUN cp /opt/openship-mail/build-config /opt/iRedMail-engine/config \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends wget dialog dirmngr \
-    && cd /opt/iRedMail-engine \
-    && AUTO_USE_EXISTING_CONFIG_FILE=y \
-       AUTO_INSTALL_WITHOUT_CONFIRM=y \
-       AUTO_CLEANUP_REMOVE_SENDMAIL=y \
-       AUTO_CLEANUP_REPLACE_FIREWALL_RULES=n \
-       AUTO_CLEANUP_RESTART_FIREWALL=n \
-       AUTO_CLEANUP_REPLACE_MYSQL_CONFIG=n \
-       CHECK_NEW_IREDMAIL=NO \
-       IREDMAIL_HOSTNAME=mail.build.invalid \
-       bash iRedMail.sh || true \
-    && rm -f /opt/iRedMail-engine/config \
-    && rm -rf /var/lib/apt/lists/*
-
-# Smoke test — the build FAILS here if the mail stack didn't actually install.
-# Every path below is a program supervisord launches at runtime (supervisord.conf);
-# an image that passes this test is guaranteed to have something to put on :25.
-# NB: Debian's amavisd-new package ships the daemon as /usr/sbin/amavisd (there is
-# no `amavisd-new` executable), which is why supervisord invokes /usr/sbin/amavisd.
-#
-# `doveadm` is not a supervisord program but is gated with them anyway, because three
-# separate paths are dead without it: db-bootstrap.sh hashes the postmaster password,
-# and the control plane hashes on every mailbox create and postmaster rotation. It
-# arrives only as a transitive dependency of the dovecot packages iRedMail installs
-# (packages.sh names dovecot-imapd/pop3d/lmtpd/managesieved/sieve/pgsql, never
-# dovecot-core), so nothing guaranteed it was here. Its absence used to surface as a
-# postmaster row with an EMPTY password and a 500 on mailbox create (GH-562) — a
-# runtime mystery for a property the build can simply assert.
+# late service/DB steps exit non-zero even when every package installed fine.
+# The binary gate is in THIS layer on purpose. A separate RUN after `|| true`
+# lets BuildKit cache an empty install forever and only fail the next layer —
+# which is how a binary-less image kept rebuilding as a cache hit.
 RUN set -eu; \
+    cp /opt/openship-mail/build-config /opt/iRedMail-engine/config; \
+    grep -q 'mail.build.invalid' /etc/hosts || \
+      printf '127.0.0.1 mail.build.invalid mail localhost\n' >> /etc/hosts; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends wget dialog dirmngr; \
+    cd /opt/iRedMail-engine; \
+    AUTO_USE_EXISTING_CONFIG_FILE=y \
+      AUTO_INSTALL_WITHOUT_CONFIRM=y \
+      AUTO_CLEANUP_REMOVE_SENDMAIL=y \
+      AUTO_CLEANUP_REPLACE_FIREWALL_RULES=n \
+      AUTO_CLEANUP_RESTART_FIREWALL=n \
+      AUTO_CLEANUP_REPLACE_MYSQL_CONFIG=n \
+      CHECK_NEW_IREDMAIL=NO \
+      IREDMAIL_HOSTNAME=mail.build.invalid \
+      bash iRedMail.sh || true; \
     missing=""; \
     for b in /usr/sbin/postfix /usr/sbin/dovecot /usr/bin/doveadm /usr/sbin/amavisd \
              /usr/sbin/clamd /usr/bin/freshclam /usr/sbin/spamd \
@@ -114,6 +103,10 @@ RUN set -eu; \
     if [ -n "$missing" ]; then \
       echo "FATAL: iRedMail install left mail binaries missing:$missing" >&2; \
       echo "The openship-mail image would ship with no mail stack (issue #493)." >&2; \
+      echo "----- iRedMail install.log (tail) -----" >&2; \
+      tail -n 80 /opt/iRedMail-engine/runtime/install.log 2>/dev/null || true; \
+      echo "----- iRedMail pkg.install.log (tail) -----" >&2; \
+      tail -n 80 /opt/iRedMail-engine/runtime/pkg.install.log 2>/dev/null || true; \
       exit 1; \
     fi; \
     doveadm pw -s SSHA512 -p build-smoke-test | grep -q '^{SSHA512}' || { \
@@ -121,7 +114,9 @@ RUN set -eu; \
       echo "Mailbox creation and the postmaster seed both depend on it (GH-562)." >&2; \
       exit 1; \
     }; \
-    echo "openship-mail: all mail daemons present ->$(echo ' postfix dovecot doveadm amavisd clamd freshclam spamd fail2ban iredapd')"
+    echo "openship-mail: all mail daemons present -> postfix dovecot doveadm amavisd clamd freshclam spamd fail2ban iredapd"; \
+    rm -f /opt/iRedMail-engine/config; \
+    rm -rf /var/lib/apt/lists/*
 
 # Runtime prerequisites the installer does not leave in place under our stubbed-
 # init build (its late service/DB steps abort — see the `|| true` above):

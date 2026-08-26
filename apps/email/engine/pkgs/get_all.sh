@@ -287,6 +287,20 @@ fi
 
 prepare_dirs
 
+# Prefer in-tree misc tarballs whose sha256 already matches pkgs.sha256.
+# `wget -c` still contacts IREDMAIL_MIRROR even when the file is complete; a
+# dead or rate-limited mirror aborted get_all.sh, iRedMail.sh exited 255, and
+# Docker's `|| true` cached an image with no mail stack (issue #493).
+if [ X"${status_fetch_misc}" != X"DONE" ] && [ -f "${_ROOTDIR}/${SHASUM_CHECK_FILE}" ]; then
+    if (cd "${_ROOTDIR}" && ${CMD_SHASUM_CHECK} ${SHASUM_CHECK_FILE}); then
+        ECHO_INFO "Using vendored misc tarballs (sha256 already matches ${SHASUM_CHECK_FILE})."
+        echo 'export status_fetch_misc="DONE"' >> ${STATUS_FILE}
+        echo 'export status_verify_downloaded_packages="DONE"' >> ${STATUS_FILE}
+        export status_fetch_misc="DONE"
+        export status_verify_downloaded_packages="DONE"
+    fi
+fi
+
 # Check required commands, and install packages which offer the commands.
 if [ X"${DISTRO}" == X"RHEL" ]; then
     check_pkg ${BIN_WHICH} ${PKG_WHICH}
