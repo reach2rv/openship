@@ -36,7 +36,7 @@ import { repos } from "@repo/db";
 import { encrypt } from "../../src/lib/encryption";
 import { LOCAL_HOST_PORT_TARGET } from "../../src/lib/host-port-target";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
-import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
+import { seedOrg, seedProject, seedDeployment, seedHostPortClaim, setActive } from "../helpers/seed";
 
 const BASE_IMAGE = "busybox:latest";
 const TAG_V1 = "openship/e2e-cycle:v1";
@@ -143,10 +143,9 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     }
 
     const org = await seedOrg();
-    // The pipeline pins ONE loopback port per project (project.host_port) and
-    // reuses it across deploys — that stability is what lets the edge keep
-    // pointing at the same upstream through a restore. Seed it, as a project that
-    // has deployed once already would have.
+    // The pipeline pins ONE loopback port per project so the edge keeps the
+    // same upstream through a restore. After a real first deploy that is the
+    // host_port cache AND a target-scoped claim — seed both.
     hostPort = await freePort();
     // A local-path project: no git remote, so the restore has nothing to clone
     // even if it wanted to — which is exactly the invariant under test.
@@ -163,6 +162,15 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
       runtimeMode: "docker",
       routeStrategy: "loopback-port",
     })) as never;
+    // `project.host_port` is a cache. Ownership lives on the target claim a
+    // real first deploy writes before Docker binds. Without it, a live
+    // occupancy scan sees v2 still listening on this port and hands the
+    // restore a different publish — HTTP on the seeded port then never answers.
+    await seedHostPortClaim({
+      projectId: project.id,
+      port: hostPort,
+      containerPort: APP_PORT,
+    });
 
     contextDir = await mkdtemp(join(tmpdir(), "openship-cycle-ctx-"));
     for (const [tag, version] of [

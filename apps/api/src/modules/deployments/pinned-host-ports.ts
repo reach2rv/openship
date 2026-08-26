@@ -382,6 +382,13 @@ export interface AllocateAndReservePinnedHostPortInput {
   cachedPreferred?: number | null;
   allowLegacyContainerPort?: boolean;
   additionalAvoid?: Iterable<number>;
+  /**
+   * Host port the workload this deploy is replacing is publishing right now.
+   * Stop-first loopback deploys allocate while that listener is still up; the
+   * live inspect is proof the occupant is ours even when a durable claim is
+   * missing or does not match the owner tuple exactly.
+   */
+  livePublish?: number | null;
   allocate: (options: AllocateHostPortOptions) => Promise<HostPortAllocation>;
 }
 
@@ -436,7 +443,14 @@ export async function allocateAndReservePinnedHostPort(
   const previousClaim = findOwnedPinnedHostPort(input.claims, input.owner, {
     allowLegacyContainerPort: input.allowLegacyContainerPort,
   });
-  const preferred = previousClaim?.port ?? input.cachedPreferred ?? undefined;
+  const livePublish =
+    input.livePublish != null &&
+    Number.isSafeInteger(input.livePublish) &&
+    input.livePublish >= 1 &&
+    input.livePublish <= 65_535
+      ? input.livePublish
+      : undefined;
+  const preferred = previousClaim?.port ?? input.cachedPreferred ?? livePublish ?? undefined;
   const reusable = previousClaim
     ? {
         ...input.owner,
@@ -447,12 +461,15 @@ export async function allocateAndReservePinnedHostPort(
   const avoid = pinnedHostPortsToAvoid(input.claims, reusable);
   for (const port of input.additionalAvoid ?? []) avoid.add(port);
 
+  const ownedReusable = reusable
+    ? ownsReusablePinnedHostPort(input.claims, reusable) && !avoid.has(reusable.port)
+    : false;
+  const liveReusable =
+    livePublish !== undefined && preferred === livePublish && !avoid.has(livePublish);
   const allocation = await input.allocate({
     preferred,
     avoid,
-    reuseOccupiedPreferred: reusable
-      ? ownsReusablePinnedHostPort(input.claims, reusable) && !avoid.has(reusable.port)
-      : false,
+    reuseOccupiedPreferred: ownedReusable || liveReusable,
   });
   const claim = await reserveTargetPinnedHostPort(input.target, {
     ...input.owner,

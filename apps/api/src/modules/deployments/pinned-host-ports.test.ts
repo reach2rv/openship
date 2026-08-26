@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { pickHostPort } from "@repo/adapters";
+import { pickHostPort, type AllocateHostPortOptions } from "@repo/adapters";
 import {
   allocateAndReservePinnedHostPort,
   convergeTargetHostPortClaims,
@@ -374,6 +374,80 @@ describe("pinnedHostPortsToAvoid", () => {
     expect(claimRepo.reserve).toHaveBeenCalledWith(
       expect.objectContaining({ targetKey: remoteTarget.targetKey, ...owner, port: 20002 }),
     );
+  });
+
+  it("does not reuse an occupied project.hostPort cache when no claim proves ownership", async () => {
+    const seen: AllocateHostPortOptions[] = [];
+    const result = await allocateAndReservePinnedHostPort({
+      target: localTarget,
+      claims: [],
+      owner: { projectId: "already-live", serviceId: null, containerPort: 80 },
+      cachedPreferred: 33679,
+      allocate: async (options) => {
+        seen.push(options);
+        return { port: pickHostPort(new Set([33679]), options), scanned: true };
+      },
+    });
+
+    expect(seen[0]?.reuseOccupiedPreferred).toBe(false);
+    expect(result.port).toBe(20000);
+    expect(claimRepo.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "already-live", port: 20000, containerPort: 80 }),
+    );
+  });
+
+  it("reuses an occupied cache when the previous container of this workload is publishing it", async () => {
+    const seen: AllocateHostPortOptions[] = [];
+    const result = await allocateAndReservePinnedHostPort({
+      target: localTarget,
+      claims: [],
+      owner: { projectId: "already-live", serviceId: null, containerPort: 80 },
+      cachedPreferred: 33679,
+      livePublish: 33679,
+      allocate: async (options) => {
+        seen.push(options);
+        return { port: pickHostPort(new Set([33679]), options), scanned: true };
+      },
+    });
+
+    expect(seen[0]?.reuseOccupiedPreferred).toBe(true);
+    expect(result.port).toBe(33679);
+    expect(claimRepo.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "already-live", port: 33679, containerPort: 80 }),
+    );
+  });
+
+  it("reuses a live publish even when the project.hostPort cache is empty", async () => {
+    const result = await allocateAndReservePinnedHostPort({
+      target: localTarget,
+      claims: [],
+      owner: { projectId: "already-live", serviceId: null, containerPort: 80 },
+      livePublish: 33679,
+      allocate: async (options) => ({
+        port: pickHostPort(new Set([33679]), options),
+        scanned: true,
+      }),
+    });
+
+    expect(result.port).toBe(33679);
+  });
+
+  it("does not treat a live publish on a different port as proof for the cache", async () => {
+    const seen: AllocateHostPortOptions[] = [];
+    const result = await allocateAndReservePinnedHostPort({
+      target: localTarget,
+      claims: [],
+      owner: { projectId: "already-live", serviceId: null, containerPort: 80 },
+      cachedPreferred: 33679,
+      livePublish: 20010,
+      allocate: async (options) => {
+        seen.push(options);
+        return { port: pickHostPort(new Set([33679]), options), scanned: true };
+      },
+    });
+
+    expect(seen[0]?.reuseOccupiedPreferred).toBe(false);
+    expect(result.port).toBe(20000);
   });
 
   it("preserves null as a legacy claim identity instead of treating it as missing", async () => {

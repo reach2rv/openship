@@ -10,7 +10,7 @@
  * factory at all.
  */
 
-import { db, repos, schema } from "@repo/db";
+import { db, repos, schema, type HostPortTargetKey } from "@repo/db";
 
 let seq = 0;
 const uid = (prefix: string) => `${prefix}_${seq++}_${Math.trunc(performance.now())}`;
@@ -75,6 +75,28 @@ export async function seedProject(
     })
     .returning();
   return row!;
+}
+
+/**
+ * The durable loopback reservation a real first deploy writes before Docker
+ * binds. `project.host_port` is only a cache; without this row an occupancy
+ * scan treats the live container's publish as someone else's and the next
+ * pipeline deploy (including rollback) moves to a new host port.
+ */
+export async function seedHostPortClaim(input: {
+  projectId: string;
+  port: number;
+  containerPort: number;
+  serviceId?: string | null;
+  targetKey?: HostPortTargetKey;
+}) {
+  return repos.hostPortClaim.reserveHostPortClaim({
+    targetKey: input.targetKey ?? "local",
+    projectId: input.projectId,
+    serviceId: input.serviceId ?? null,
+    containerPort: input.containerPort,
+    port: input.port,
+  });
 }
 
 /**

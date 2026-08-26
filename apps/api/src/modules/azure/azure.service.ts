@@ -12,6 +12,8 @@ import { azureFetch, azureFetchText } from "./azure.auth";
 
 const ADO = "https://dev.azure.com";
 const VSSPS = "https://app.vssps.visualstudio.com";
+/** Azure DevOps Service Hook publisher event — not an Openship audit `eventType`. */
+const AZURE_SERVICE_HOOK_PUSH_EVENT = "git.push";
 
 interface AzureList<T> {
   value?: T[];
@@ -180,7 +182,7 @@ export async function registerServiceHook(
   const repository = await getRepository(ctx, org, project, repo);
   const body = {
     publisherId: "tfs",
-    eventType: "git.push",
+    eventType: AZURE_SERVICE_HOOK_PUSH_EVENT,
     resourceVersion: "1.0",
     consumerId: "webHooks",
     consumerActionId: "httpRequest",

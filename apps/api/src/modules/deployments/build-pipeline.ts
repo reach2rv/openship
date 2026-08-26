@@ -1912,6 +1912,16 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
               serviceId: null,
               containerPort: snapshot.port,
             } as const;
+            const previous = project.activeDeploymentId
+              ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+              : null;
+            const livePublish =
+              previous?.containerId && isRealContainerRef(previous.containerId)
+                ? await runtime
+                    .getContainerInfo(previous.containerId)
+                    .then((info) => info?.hostPort)
+                    .catch(() => undefined)
+                : undefined;
             const allocation = await allocateAndReservePinnedHostPort({
               target,
               claims,
@@ -1921,6 +1931,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
               // ownership.
               cachedPreferred: project.hostPort,
               allowLegacyContainerPort: true,
+              livePublish,
               allocate: (allocationOptions) => allocateHostPort(executor, allocationOptions),
             });
             attemptedHostPortAllocations.push(allocation);
