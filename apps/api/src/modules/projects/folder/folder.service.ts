@@ -41,6 +41,7 @@ import { provisionCloudWorkspace } from "@repo/adapters";
 import { env } from "../../../config/env";
 import { getNamespaceClient } from "../../../lib/openship-cloud";
 import { resolveApiPublicUrl } from "../../../lib/public-url";
+import type { ResolveOptions } from "../../deployments/prepare.service";
 import {
   newFolderSessionId,
   putFolderSession,
@@ -361,13 +362,13 @@ async function streamToFile(body: ReadableStream<Uint8Array>, dest: string): Pro
  * back (the documented session → scan → ensure → deploy flow has no step that
  * does), and by then the uploaded compose file is no longer parsed again.
  */
-export async function scanFolderSession(session: FolderSession) {
-  const info = await scanSource(session);
+export async function scanFolderSession(session: FolderSession, opts: ResolveOptions = {}) {
+  const info = await scanSource(session, opts);
   session.services = info.services;
   return info;
 }
 
-async function scanSource(session: FolderSession) {
+async function scanSource(session: FolderSession, opts: ResolveOptions) {
   if (session.mode === "oblien-direct") {
     if (!session.workspaceId) throw new Error("Session has no workspace");
     // Namespace-scoped client (not the master) so the by-id runtime lookup
@@ -375,12 +376,12 @@ async function scanSource(session: FolderSession) {
     const { client } = await getNamespaceClient(session.orgId);
     const rt = await client.workspaces.runtime(session.workspaceId);
     const { resolveFromRuntime } = await import("../../deployments/runtime-source");
-    return resolveFromRuntime(rt, session.name ?? "app");
+    return resolveFromRuntime(rt, session.name ?? "app", opts);
   }
 
   if (!session.stagingDir) throw new Error("Session has no staging directory");
   const st = await stat(session.stagingDir).catch(() => null);
   if (!st?.isDirectory()) throw new Error("Uploaded source not found");
   const { resolveFromLocal } = await import("../../deployments/local-source");
-  return resolveFromLocal(session.stagingDir);
+  return resolveFromLocal(session.stagingDir, opts);
 }

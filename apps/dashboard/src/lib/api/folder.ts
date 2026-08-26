@@ -44,8 +44,8 @@ export const folderApi = {
 
   /** Authoritative framework detection on the uploaded source (fallback path;
    *  the UI normally seeds from the user-picked stack instead). */
-  scan: (sessionId: string) =>
-    api.post<FolderScanResponse>(endpoints.projects.folderScan(sessionId), {}),
+  scan: (sessionId: string, body?: { composePath?: string; env?: Record<string, string> }) =>
+    api.post<FolderScanResponse>(endpoints.projects.folderScan(sessionId), body ?? {}),
 
   /** #336: real (unmasked) values for ONE service's named env keys. Write-gated
    *  (project:write) on the API, which rejects an empty `keys`. */

@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
-import { getBuildImage, STACKS, resolveWorkload, type WorkloadType, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId, type RoutingConfig, type OpenshipReadiness, type ResourceTier as CoreResourceTier } from "@repo/core";
+import { getBuildImage, STACKS, resolveWorkload, type WorkloadType, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId, type RoutingConfig, type OpenshipReadiness, type ResourceTier as CoreResourceTier, type GitHostProvider } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import type { BuildSessionLoadResult } from "./load-session";
 import { randomUUID } from "@/lib/random-uuid";
@@ -892,7 +892,7 @@ export interface DeploymentContextType {
       branch?: string;
       projectId?: string;
       composePath?: string;
-      provider?: "github" | "azure";
+      provider?: GitHostProvider;
       gitProject?: string;
     },
   ) => Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }>;
@@ -917,7 +917,15 @@ export interface DeploymentContextType {
    *  (no auto-detection); falls back to the session scan when no stack given. */
   initializeFromUpload: (
     sessionId: string,
-    context?: { projectId?: string; stack?: string; packageManager?: string; name?: string; artifact?: boolean },
+    context?: {
+      projectId?: string;
+      stack?: string;
+      packageManager?: string;
+      name?: string;
+      artifact?: boolean;
+      composePath?: string;
+      env?: Record<string, string>;
+    },
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
   /** Config-edit hydration from SAVED project data — no repo re-detection. */
   initializeFromProject: (

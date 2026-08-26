@@ -1,6 +1,6 @@
 import { isIgnoredRepoPath, type RepoTreeEntry } from "../../lib/project-root-detector";
 import type { ProjectReader } from "./project-reader";
-import { resolveFromReader, type ProjectInfo } from "./prepare.service";
+import { resolveFromReader, type ProjectInfo, type ResolveOptions } from "./prepare.service";
 
 /**
  * Framework detection for a folder that was UPLOADED into an Oblien cloud
@@ -97,6 +97,7 @@ export function createRuntimeReader(rt: RuntimeFilesClient): ProjectReader {
 export async function resolveFromRuntime(
   rt: RuntimeFilesClient,
   name: string,
+  opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
   const reader = createRuntimeReader(rt);
   const rootPackageJson = await reader.readJson("package.json");
@@ -112,5 +113,6 @@ export async function resolveFromRuntime(
       default_branch: "main",
     },
     "main",
+    opts,
   );
 }

@@ -10,7 +10,7 @@ import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
 import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
-import { STACKS, getBuildImage, toWorkloadType, type DeployTarget, type StackDefinition, type StackId, type WorkloadType } from "@repo/core";
+import { STACKS, getBuildImage, toWorkloadType, type DeployTarget, type GitHostProvider, type StackDefinition, type StackId, type WorkloadType } from "@repo/core";
 import type { BuildStrategy, DeploymentConfig, DeploymentModeSnapshot, MonorepoAppConfig, MonorepoWorkspaceConfig, PublicEndpoint } from "./types";
 import {
   DEFAULT_CONFIG,
@@ -160,6 +160,23 @@ function scanEnv(envVars: EnvironmentVariable[]): { env?: Record<string, string>
     if (name) env[name] = value;
   }
   return Object.keys(env).length > 0 ? { env } : {};
+}
+
+/** Git clone host only — `"upload"` is a source kind, not a repo provider. */
+function gitHostProvider(provider: DeploymentConfig["gitProvider"]): GitHostProvider | undefined {
+  switch (provider) {
+    case "azure":
+      return "azure";
+    case "github":
+      return "github";
+    case "upload":
+    case undefined:
+      return undefined;
+    default: {
+      const _exhaustive: never = provider;
+      return _exhaustive;
+    }
+  }
 }
 
 function hasSavedProjectPort(project: PersistedProject) {
@@ -848,7 +865,7 @@ export function useDeploymentConfig() {
         projectId?: string;
         composePath?: string;
         env?: Record<string, string>;
-        provider?: "github" | "azure";
+        provider?: GitHostProvider;
         gitProject?: string;
       },
     ): Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }> => {
@@ -1004,59 +1021,6 @@ export function useDeploymentConfig() {
     [buildPreparedConfig],
   );
 
-  // ── Re-scan pinned to an explicit compose path ─────────────────────────────
-  // The one config field that cannot be applied locally: projectType, the service
-  // list, and each service's env all come from the compose file, so pointing at a
-  // different file means re-reading the source. Routes back through the same
-  // initialize* path the wizard entered by, so the resulting config is identical
-  // to a fresh scan of that path — no partially-updated middle state.
-  const rescanWithComposePath = useCallback(
-    async (composePath: string): Promise<{ success: boolean; error?: string; errorType?: string }> => {
-      // "" clears the pin: the initialize* paths drop a blank value, so the scan
-      // falls back to ordinary root detection.
-      const trimmed = composePath.trim();
-      // Carry the env the user has already entered so a compose file with
-      // required variables re-scans instead of erroring as unparseable (#383).
-      const env = scanEnv(config.envVars);
-
-      if (config.localPath) {
-        return initializeFromLocal(config.localPath, {
-          projectId: config.projectId,
-          composePath: trimmed,
-          ...env,
-        });
-      }
-      if (!config.owner || !config.repo) {
-        return {
-          success: false,
-          error: "This project has no git or local source to re-scan",
-          errorType: "api_error",
-        };
-      }
-      const result = await initializeFromRepo(config.owner, config.repo, undefined, {
-        branch: config.branch,
-        projectId: config.projectId,
-        composePath: trimmed,
-        provider: config.gitProvider,
-        gitProject: config.gitProject,
-        ...env,
-      });
-      return { success: result.success, error: result.error, errorType: result.errorType };
-    },
-    [
-      config.localPath,
-      config.owner,
-      config.repo,
-      config.branch,
-      config.projectId,
-      config.gitProvider,
-      config.gitProject,
-      config.envVars,
-      initializeFromLocal,
-      initializeFromRepo,
-    ],
-  );
-
   // ── Folder upload: seed from the uploaded source's scan ─────────────────────
   // The folder was already uploaded (to an Oblien workspace or the API staging
   // dir) before we got here. We re-run the authoritative scan for that session
@@ -1065,7 +1029,15 @@ export function useDeploymentConfig() {
   const initializeFromUpload = useCallback(
     async (
       sessionId: string,
-      context?: { projectId?: string; stack?: string; packageManager?: string; name?: string; artifact?: boolean },
+      context?: {
+        projectId?: string;
+        stack?: string;
+        packageManager?: string;
+        name?: string;
+        artifact?: boolean;
+        composePath?: string;
+        env?: Record<string, string>;
+      },
     ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
       try {
         let project: PersistedProject = null;
@@ -1077,14 +1049,16 @@ export function useDeploymentConfig() {
         // The upload wizard has the user pick the stack up front (like the
         // template list), so we seed the config from that stack's defaults —
         // no auto-detection. `scan` is only used as a fallback (e.g. an MCP/
-        // programmatic caller that didn't pick a stack).
+        // programmatic caller that didn't pick a stack) or when a compose path
+        // pin forces a re-read of the uploaded source.
         let response: PrepareProjectResponse;
         let name: string;
 
         const stackDef: StackDefinition | undefined = context?.stack
           ? (STACKS[context.stack as StackId] as StackDefinition)
           : undefined;
-        const seedFromStack = context?.stack && stackDef && !context.artifact;
+        const pinCompose = Boolean(context?.composePath?.trim());
+        const seedFromStack = context?.stack && stackDef && !context.artifact && !pinCompose;
         if (seedFromStack && stackDef) {
           name = context.name || "app";
           const pm = context.packageManager || "npm";
@@ -1111,7 +1085,10 @@ export function useDeploymentConfig() {
             services: undefined,
           } as unknown as PrepareProjectResponse;
         } else {
-          const scan = await folderApi.scan(sessionId);
+          const scan = await folderApi.scan(sessionId, {
+            ...scanComposePath(context?.composePath, project),
+            ...(context?.env ? { env: context.env } : {}),
+          });
           if ((scan as { error?: string })?.error) {
             return { success: false, error: (scan as { error?: string }).error, errorType: "api_error" };
           }
@@ -1154,6 +1131,7 @@ export function useDeploymentConfig() {
           branches: [],
           projectId: context?.projectId,
           uploadSessionId: sessionId,
+          gitProvider: "upload",
           artifact: context?.artifact,
         }));
 
@@ -1168,6 +1146,75 @@ export function useDeploymentConfig() {
       }
     },
     [buildPreparedConfig],
+  );
+
+  // ── Re-scan pinned to an explicit compose path ─────────────────────────────
+  // The one config field that cannot be applied locally: projectType, the service
+  // list, and each service's env all come from the compose file, so pointing at a
+  // different file means re-reading the source. Routes back through the same
+  // initialize* path the wizard entered by, so the resulting config is identical
+  // to a fresh scan of that path — no partially-updated middle state.
+  const rescanWithComposePath = useCallback(
+    async (composePath: string): Promise<{ success: boolean; error?: string; errorType?: string }> => {
+      // "" clears the pin: the initialize* paths drop a blank value, so the scan
+      // falls back to ordinary root detection.
+      const trimmed = composePath.trim();
+      // Carry the env the user has already entered so a compose file with
+      // required variables re-scans instead of erroring as unparseable (#383).
+      const env = scanEnv(config.envVars);
+
+      if (config.localPath) {
+        return initializeFromLocal(config.localPath, {
+          projectId: config.projectId,
+          composePath: trimmed,
+          ...env,
+        });
+      }
+      if (config.uploadSessionId || config.gitProvider === "upload") {
+        if (!config.uploadSessionId) {
+          return {
+            success: false,
+            error: "This project has no uploaded source session to re-scan",
+            errorType: "api_error",
+          };
+        }
+        return initializeFromUpload(config.uploadSessionId, {
+          projectId: config.projectId,
+          composePath: trimmed,
+          ...env,
+        });
+      }
+      if (!config.owner || !config.repo) {
+        return {
+          success: false,
+          error: "This project has no git or local source to re-scan",
+          errorType: "api_error",
+        };
+      }
+      const result = await initializeFromRepo(config.owner, config.repo, undefined, {
+        branch: config.branch,
+        projectId: config.projectId,
+        composePath: trimmed,
+        provider: gitHostProvider(config.gitProvider),
+        gitProject: config.gitProject,
+        ...env,
+      });
+      return { success: result.success, error: result.error, errorType: result.errorType };
+    },
+    [
+      config.localPath,
+      config.uploadSessionId,
+      config.owner,
+      config.repo,
+      config.branch,
+      config.projectId,
+      config.gitProvider,
+      config.gitProject,
+      config.envVars,
+      initializeFromLocal,
+      initializeFromUpload,
+      initializeFromRepo,
+    ],
   );
 
   // ── Config edit: hydrate from the SAVED project, no repo re-detection ───────
@@ -1271,7 +1318,12 @@ export function useDeploymentConfig() {
               branches: branch ? [branch] : [],
               projectId,
               localPath: project.localPath || undefined,
-              gitProvider: project.gitProvider === "azure" ? "azure" : "github",
+              gitProvider:
+                project.gitProvider === "azure"
+                  ? "azure"
+                  : project.gitProvider === "upload"
+                    ? "upload"
+                    : "github",
               gitProject: typeof project.gitProject === "string" ? project.gitProject : undefined,
             }),
             // buildPreparedConfig (shared with detection) doesn't load production

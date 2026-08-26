@@ -81,7 +81,16 @@ export async function scanSession(c: Context) {
   }
 
   try {
-    const result = await scanFolderSession(session);
+    const body = await c.req
+      .json<{ composePath?: string; env?: Record<string, string> }>()
+      .catch(() => ({}) as { composePath?: string; env?: Record<string, string> });
+    const composePath = typeof body.composePath === "string" ? body.composePath.trim() : "";
+    const env =
+      body.env && typeof body.env === "object" && !Array.isArray(body.env) ? body.env : undefined;
+    const result = await scanFolderSession(session, {
+      ...(composePath ? { composePath } : {}),
+      ...(env ? { env } : {}),
+    });
     return c.json({ success: true, sessionId, ...projectInfoToScanResponse(result) });
   } catch (err) {
     const status = (
