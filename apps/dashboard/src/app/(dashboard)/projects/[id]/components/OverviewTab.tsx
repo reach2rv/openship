@@ -10,6 +10,7 @@ import { UsedByCard } from "./UsedByCard";
 import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
 import { gitSourceHref, gitSourceLabel } from "@/utils/repoSlug";
 import type { Dictionary } from "@/i18n";
+import { interpolate, useI18n } from "@/components/i18n-provider";
 import {
   ExternalLink,
   GitBranch,
@@ -65,7 +66,25 @@ export const OverviewTab = () => {
         : deployTarget === "local"
           ? t.projects.overview.platformLocal
           : "-";
-  const hasGit = !!(projectData.gitOwner && projectData.gitRepo);
+  const gitOwner = projectData.gitOwner;
+  const gitRepo = projectData.gitRepo;
+  const hasGit = !!(gitOwner && gitRepo);
+  const gitHref = gitOwner && gitRepo
+    ? gitSourceHref({
+        provider: projectData.gitProvider,
+        owner: gitOwner,
+        repo: gitRepo,
+        project: projectData.gitProject,
+      })
+    : null;
+  const gitLabel = gitOwner && gitRepo
+    ? gitSourceLabel({
+        provider: projectData.gitProvider,
+        owner: gitOwner,
+        repo: gitRepo,
+        project: projectData.gitProject,
+      })
+    : "";
   // A worker shares hasServer=false with a static site, so classify via the
   // resolved workload — otherwise a worker mislabels as "Static" (#538).
   const workload = workloadOf({
@@ -257,35 +276,20 @@ export const OverviewTab = () => {
             </span>
             {showProjectInfoSkeleton ? (
               <div className="h-[14px] w-28 rounded bg-muted-foreground/20 animate-pulse" />
-            ) : hasGit ? (() => {
-              const href = gitSourceHref({
-                provider: projectData.gitProvider,
-                owner: projectData.gitOwner,
-                repo: projectData.gitRepo,
-                project: projectData.gitProject,
-              });
-              const label = gitSourceLabel({
-                provider: projectData.gitProvider,
-                owner: projectData.gitOwner,
-                repo: projectData.gitRepo,
-                project: projectData.gitProject,
-              });
-              return href ? (
+            ) : hasGit && gitHref ? (
               <a
-                href={href}
+                href={gitHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 truncate max-w-[180px]"
               >
-                {label}
+                {gitLabel}
                 <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
               </a>
-              ) : (
-                <span className="text-[13px] font-medium text-foreground truncate max-w-[180px]">
-                  {label}
-                </span>
-              );
-            })() : (
+            ) : hasGit ? (
+              <span className="text-[13px] font-medium text-foreground truncate max-w-[180px]">
+                {gitLabel}
+              </span>
             ) : (
               <span className="text-[13px] text-muted-foreground/60">
                 {t.projects.overview.notConnected}
