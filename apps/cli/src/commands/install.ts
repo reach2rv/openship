@@ -2,8 +2,8 @@
  * `openship install` — lazy-download and install the Openship desktop app for
  * the current OS/arch.
  *
- * This talks to GitHub, NOT the Openship API: assets are published to
- * github.com/oblien/openship/releases (asset names match the desktop updater,
+ * This talks to GitHub, NOT the Openship API: assets are published to this
+ * fork's GitHub releases (asset names match the desktop updater,
  * apps/desktop/src/main/updater.ts — Openship-arm64.dmg / Openship-x64.dmg /
  * Openship.AppImage, plus Openship-win32-x64.zip for the CLI install path).
  *

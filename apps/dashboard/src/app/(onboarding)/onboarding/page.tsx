@@ -1,5 +1,6 @@
 "use client";
 
+import { BRAND_LINKS } from "@repo/core";
 import { useState, useCallback, useRef, Suspense } from "react";
 import { useI18n } from "@/components/i18n-provider";
 import type { OnboardingStep, OnboardingState } from "@repo/onboarding";
@@ -132,7 +133,7 @@ function OnboardingInner() {
           <a className="ob-top-bar-link" href="https://openship.io" target="_blank" rel="noopener noreferrer" title={t.onboarding.topBar.website}>
             <GlobeIcon />
           </a>
-          <a className="ob-top-bar-link" href="https://github.com/oblien/openship" target="_blank" rel="noopener noreferrer" title={t.onboarding.topBar.github}>
+          <a className="ob-top-bar-link" href={BRAND_LINKS.github} target="_blank" rel="noopener noreferrer" title={t.onboarding.topBar.github}>
             <GitHubIcon />
           </a>
         </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { BRAND_LINKS } from "@repo/core";
+
 /**
  * Root global-error boundary. Next prerenders `/_global-error` at build time; its
  * DEFAULT page crashes during static export on Next 16 ("useContext" of null).
@@ -72,7 +74,7 @@ export default function GlobalError({
             </a>
             <span className="ge-dot" aria-hidden="true" />
             <a
-              href="https://github.com/oblien/openship/issues"
+              href={BRAND_LINKS.issuesList}
               target="_blank"
               rel="noopener noreferrer"
             >

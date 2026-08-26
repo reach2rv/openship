@@ -1,5 +1,6 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import { DocsLayout } from "fumadocs-ui/layouts/notebook";
+import { BRAND_LINKS } from "@repo/core";
 import { docsSource } from "@/lib/source";
 import type { ReactNode } from "react";
 
@@ -48,7 +49,7 @@ export default function DocsRootLayout({ children }: { children: ReactNode }) {
           ),
           url: "/",
         }}
-        githubUrl="https://github.com/oblien/openship"
+        githubUrl={BRAND_LINKS.github}
         links={[
           { text: "Changelog", url: "/changelog" },
           { text: "Resources", url: "/resources" },

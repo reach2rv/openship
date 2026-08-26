@@ -106,11 +106,14 @@ describe("docker/docker-compose.yml — edge mounts match EDGE_CONTAINER_MOUNTS"
     expect(compose().services.api?.volumes ?? []).toContain(HOST_KEY_MOUNT);
   });
 
-  it("falls back to the shared registry default", () => {
+  it("falls back to the shared registry default on api, dashboard, and edge", () => {
     // The YAML's `${OPENSHIP_IMAGE_REGISTRY:-…}` is the fourth copy of this default
     // and the only one that can't import the constant.
-    const image = compose().services.edge?.image ?? "";
-    expect(image).toContain(`:-${DEFAULT_IMAGE_REGISTRY}}`);
-    expect(image).toContain("/openship-edge:");
+    const services = compose().services;
+    for (const name of ["api", "dashboard", "edge"] as const) {
+      const image = services[name]?.image ?? "";
+      expect(image, name).toContain(`:-${DEFAULT_IMAGE_REGISTRY}}`);
+      expect(image, name).toContain(`/openship-${name}:`);
+    }
   });
 });

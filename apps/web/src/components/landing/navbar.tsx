@@ -1,5 +1,6 @@
 "use client";
 
+import { BRAND_LINKS } from "@repo/core";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -12,7 +13,7 @@ const NAV_ITEMS = [
   { label: "Pricing", href: "/pricing" },
 ];
 
-const GITHUB_URL = "https://github.com/oblien/openship";
+const GITHUB_URL = BRAND_LINKS.github;
 
 export function Navbar() {
   const [dark, setDark] = useState(false);

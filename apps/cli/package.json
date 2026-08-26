@@ -1,6 +1,6 @@
 {
   "name": "@reach2rv/openship",
-  "version": "0.6.9-dotnet.0",
+  "version": "0.6.9-dotnet.1",
   "description": "Openship CLI - deploy, manage, and open your Openship platform from the terminal",
   "license": "Apache-2.0",
   "author": "reach2rv",

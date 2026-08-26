@@ -22,7 +22,7 @@
 # advanced git-clone self-hosters. Keep the two in sync (apps/cli/src/lib/compose.ts).
 #
 # PULL-BASED by default: `api` + `dashboard` + `edge` come from published images
-#   on GHCR (ghcr.io/oblien/*; OPENSHIP_IMAGE_REGISTRY overrides for a mirror).
+#   on GHCR (ghcr.io/reach2rv/*; OPENSHIP_IMAGE_REGISTRY overrides for a mirror).
 #   Pin OPENSHIP_VERSION in .env for reproducible upgrades. To BUILD from source
 #   instead, layer the override:
 #     docker compose -f docker/docker-compose.yml -f docker/docker-compose.build.yml \
@@ -105,7 +105,7 @@ services:
 
   # ─── API (control plane) ──────────────────────────────
   api:
-    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-api:${OPENSHIP_VERSION:-latest}
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/reach2rv}/openship-api:${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
     ports:
       # Loopback by default — the host-net edge reaches it over loopback.
@@ -189,7 +189,7 @@ services:
 
   # ─── Dashboard (app UI) ───────────────────────────────
   dashboard:
-    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-dashboard:${OPENSHIP_VERSION:-latest}
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/reach2rv}/openship-dashboard:${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
     ports:
       - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
@@ -210,7 +210,7 @@ services:
   # vhost config is unchanged. The API drives it via `docker exec` + the shared
   # volumes above. LINUX ONLY (host networking); on mac/win use the bare CLI.
   edge:
-    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-edge:${OPENSHIP_VERSION:-latest}
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/reach2rv}/openship-edge:${OPENSHIP_VERSION:-latest}
     # PINNED, and it must stay pinned: the api reaches the edge by NAME through
     # DockerEdgeExecutor (OPENSHIP_EDGE_CONTAINER above), and "ours" edge
     # detection greps `docker ps --filter name=openship-edge`. Without this,

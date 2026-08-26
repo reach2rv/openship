@@ -21,7 +21,7 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import type { AdvisorySeverity } from "@repo/core";
+import { changelogUrl, type AdvisorySeverity } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
 import { useUpdates } from "./useUpdates";
@@ -71,7 +71,7 @@ export function UpdateCenter() {
   const updating = desktop && updatePhase !== "idle";
   const updatingVersion = state?.latestVersion ?? latest?.version ?? "";
   const pct = Math.round(Math.min(1, Math.max(0, updateProgress)) * 100);
-  const changelog = state?.latestChangelogUrl ?? "https://github.com/oblien/openship/releases";
+  const changelog = state?.latestChangelogUrl ?? changelogUrl();
 
   return (
     <>

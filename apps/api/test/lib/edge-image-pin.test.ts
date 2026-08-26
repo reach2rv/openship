@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, it, afterEach } from "vitest";
 
+import { DEFAULT_IMAGE_REGISTRY } from "@repo/core";
+
 import { edgeBuildSpec, pinnedEdgeImage, withPinnedEdgeImage } from "../../src/lib/edge-image";
 import { detectBuildContext } from "../../src/lib/managed-images";
 import { APP_VERSION } from "../../src/lib/app-version";
@@ -32,7 +34,7 @@ describe("pinnedEdgeImage", () => {
   it("pins the tag to this API's own version (no checkout → published tag)", () => {
     clearRefEnv();
     process.env.OPENSHIP_EDGE_BUILD_CONTEXT = NO_CHECKOUT;
-    expect(pinnedEdgeImage()).toBe(`ghcr.io/oblien/openship-edge:${APP_VERSION}`);
+    expect(pinnedEdgeImage()).toBe(`${DEFAULT_IMAGE_REGISTRY}/openship-edge:${APP_VERSION}`);
   });
 
   it("honours a configured registry", () => {

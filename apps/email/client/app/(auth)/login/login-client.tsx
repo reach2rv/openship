@@ -255,7 +255,7 @@ export function LoginClient() {
                 Terms
               </a>
               <a
-                href="https://github.com/oblien/openship"
+                href="https://github.com/reach2rv/openship"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="GitHub"

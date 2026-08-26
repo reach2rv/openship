@@ -1,5 +1,6 @@
 "use client";
 
+import { GITHUB_REPO } from "@repo/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Loader2, Search, BookOpen, Plus, X } from "lucide-react";
@@ -153,7 +154,7 @@ export default function NewAppPage() {
                 icon: <BookOpen className="size-4" />,
                 onClick: () =>
                   window.open(
-                    "https://github.com/oblien/openship/tree/main/packages/core/src/apps",
+                    `https://github.com/${GITHUB_REPO}/tree/main/packages/core/src/apps`,
                     "_blank",
                     "noopener,noreferrer",
                   ),

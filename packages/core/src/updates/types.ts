@@ -103,6 +103,8 @@ export interface UpdateState {
 }
 
 export const GITHUB_REPO = "reach2rv/openship";
+/** GitHub org/user that owns `GITHUB_REPO` — GHCR namespace for published images. */
+export const GITHUB_OWNER = GITHUB_REPO.slice(0, GITHUB_REPO.indexOf("/"));
 
 /** npm package this fork publishes. Unscoped `openship` is upstream (oblien). */
 export const NPM_PACKAGE = "@reach2rv/openship";

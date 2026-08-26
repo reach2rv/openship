@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { assetUrl, RELEASES, REPO } from "../../src/lib/github-releases";
 
 describe("github-releases constants", () => {
-  it("points at the oblien/openship releases page", () => {
+  it("points at this fork's GitHub releases page", () => {
     expect(REPO).toBe("reach2rv/openship");
     expect(RELEASES).toBe("https://github.com/reach2rv/openship/releases");
   });

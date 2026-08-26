@@ -12,6 +12,7 @@
  * Everything is best-effort: a missing DB, no network, or a private/loopback IP
  * just yields `null`, and the UI falls back to a neutral glyph.
  */
+import { GITHUB_REPO } from "@repo/core";
 import { open, type Reader, type CountryResponse } from "maxmind";
 import { isIP } from "node:net";
 import { existsSync } from "node:fs";
@@ -25,7 +26,7 @@ const DB_FILE = "GeoLite2-Country.mmdb";
 /** Fallback download source — OUR repo copy, not a third party. */
 const DB_URL =
   process.env.OPENSHIP_GEOIP_URL?.trim() ||
-  `https://raw.githubusercontent.com/oblien/openship/main/apps/api/assets/geoip/${DB_FILE}`;
+  `https://raw.githubusercontent.com/${GITHUB_REPO}/main/apps/api/assets/geoip/${DB_FILE}`;
 
 const CACHE_PATH = join(homedir(), ".openship", "cache", DB_FILE);
 

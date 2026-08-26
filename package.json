@@ -1,11 +1,11 @@
 {
   "name": "openship",
-  "version": "0.6.9-dotnet.0",
+  "version": "0.6.9-dotnet.1",
   "description": "Open-source, self-hostable deployment platform",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oblien/openship.git"
+    "url": "https://github.com/reach2rv/openship.git"
   },
   "workspaces": [
     "apps/*",

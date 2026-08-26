@@ -176,9 +176,9 @@ export function NavMain({ items }: NavMainProps) {
         {isBottomNav ? (
           <NavItem
             key={'feedback'}
-            isActive={isUrlActive('https://github.com/oblien/openship/issues')}
-            href={'https://github.com/oblien/openship/issues'}
-            url={'https://github.com/oblien/openship/issues'}
+            isActive={isUrlActive('https://github.com/reach2rv/openship/issues')}
+            href={'https://github.com/reach2rv/openship/issues'}
+            url={'https://github.com/reach2rv/openship/issues'}
             icon={MessageSquare}
             target={'_blank'}
             title={m['navigation.sidebar.feedback']()}

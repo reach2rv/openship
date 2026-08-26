@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, it, expect } from "vitest";
 
+import { DEFAULT_IMAGE_REGISTRY } from "@repo/core";
+
 import { APP_VERSION } from "./app-version";
 import { mailBuildSpec, pinnedMailImage } from "./mail-image";
 
@@ -49,6 +51,6 @@ describe("pinnedMailImage — virtual dev version", () => {
     // Explicit context is taken verbatim (no existence check), but it holds no
     // apps/email tree, so the dev-tag signature is empty and the tag stays APP_VERSION.
     process.env.OPENSHIP_MAIL_BUILD_CONTEXT = "/definitely/not/an/openship/checkout";
-    expect(pinnedMailImage()).toBe(`ghcr.io/oblien/openship-mail:${APP_VERSION}`);
+    expect(pinnedMailImage()).toBe(`${DEFAULT_IMAGE_REGISTRY}/openship-mail:${APP_VERSION}`);
   });
 });

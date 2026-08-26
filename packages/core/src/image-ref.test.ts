@@ -6,6 +6,8 @@ import {
   registryConfigKeys,
   registryForImage,
 } from "./image-ref";
+import { DEFAULT_IMAGE_REGISTRY } from "./constants";
+import { GITHUB_OWNER } from "./updates/types";
 
 /**
  * These three functions have to agree, and that is the whole reason they live together:
@@ -96,5 +98,11 @@ describe("registryConfigKeys", () => {
 
   it("normalizes its input first, so a typed URL still yields the right keys", () => {
     expect(registryConfigKeys("https://ghcr.io/")).toEqual(registryConfigKeys("ghcr.io"));
+  });
+});
+
+describe("DEFAULT_IMAGE_REGISTRY", () => {
+  it("is this fork's GHCR namespace, not a second hardcoded owner", () => {
+    expect(DEFAULT_IMAGE_REGISTRY).toBe(`ghcr.io/${GITHUB_OWNER}`);
   });
 });

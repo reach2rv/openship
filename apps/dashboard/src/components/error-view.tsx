@@ -1,5 +1,6 @@
 "use client";
 
+import { BRAND_LINKS } from "@repo/core";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/logo";
@@ -196,7 +197,7 @@ export function ErrorView({
         </a>
         <span aria-hidden className="size-1 rounded-full bg-muted-foreground/30" />
         <a
-          href="https://github.com/oblien/openship/issues"
+          href={BRAND_LINKS.issuesList}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"

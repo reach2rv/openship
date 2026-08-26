@@ -30,7 +30,7 @@
  *   GET /health                        - 200 ok
  */
 
-import { answered, refused, safeErrorMessage } from "@repo/core";
+import { answered, GITHUB_REPO, refused, safeErrorMessage } from "@repo/core";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -575,7 +575,7 @@ export const GEOIP_DB_PATH = `${GEOIP_DIR}/GeoLite2-Country.mmdb`;
  */
 const GEOIP_DB_URL =
   process.env.OPENSHIP_GEOIP_URL?.trim() ||
-  "https://raw.githubusercontent.com/oblien/openship/main/apps/api/assets/geoip/GeoLite2-Country.mmdb";
+  `https://raw.githubusercontent.com/${GITHUB_REPO}/main/apps/api/assets/geoip/GeoLite2-Country.mmdb`;
 
 // ── Local Lua source directory ───────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import {
   APP_TEMPLATES,
+  GITHUB_REPO,
   isValidAppTemplate,
   parseAppTemplate,
   templateEngineOk,
@@ -32,7 +33,7 @@ import { readApiVersion } from "../../lib/release-dist";
  */
 
 const REMOTE_URL =
-  "https://raw.githubusercontent.com/oblien/openship/main/packages/core/src/apps/catalog.json";
+  `https://raw.githubusercontent.com/${GITHUB_REPO}/main/packages/core/src/apps/catalog.json`;
 const TTL_MS = 600_000; // 10 minutes
 /** Catalog-ENVELOPE version we know how to read (the top-level `version`). A
  *  newer envelope is logged, not fatal — entries are gated individually. */

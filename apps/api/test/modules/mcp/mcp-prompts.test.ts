@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { BRAND_LINKS } from "@repo/core";
+
 import { listPrompts, getPrompt } from "../../../src/modules/mcp/mcp-prompts";
 
 /**
@@ -46,7 +48,7 @@ describe("mcp prompts catalog", () => {
     for (const p of listPrompts()) {
       const res = getPrompt(p.name, {});
       const text = (res!.messages[0] as { content: { text: string } }).content.text;
-      expect(text).toContain("https://github.com/oblien/openship/issues");
+      expect(text).toContain(BRAND_LINKS.issuesList);
     }
   });
 

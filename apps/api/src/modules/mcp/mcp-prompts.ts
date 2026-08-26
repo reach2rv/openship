@@ -1,3 +1,5 @@
+import { BRAND_LINKS } from "@repo/core";
+
 import { getMcpTools } from "./mcp-tools";
 
 /**
@@ -40,7 +42,7 @@ function toolRef(method: string, path: string): string {
  * the issue tracker rather than silently working around it.
  */
 const BUG_REPORT =
-  "If you hit what looks like a bug in Openship itself — an unexpected 500, a tool that misbehaves, or a deploy that fails for a platform reason rather than your input — tell the user to open an issue at https://github.com/oblien/openship/issues, including the tool name, the arguments you sent, and any error text returned.";
+  `If you hit what looks like a bug in Openship itself — an unexpected 500, a tool that misbehaves, or a deploy that fails for a platform reason rather than your input — tell the user to open an issue at ${BRAND_LINKS.issuesList}, including the tool name, the arguments you sent, and any error text returned.`;
 
 const PROMPTS: PromptDef[] = [
   {

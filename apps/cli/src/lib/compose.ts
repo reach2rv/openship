@@ -533,7 +533,7 @@ services:
       retries: 12
 
   api:
-    image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-api:\${OPENSHIP_VERSION:-latest}
+    image: \${OPENSHIP_IMAGE_REGISTRY:-${DEFAULT_IMAGE_REGISTRY}}/openship-api:\${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
     # Loopback by default — the host-net edge reaches it over loopback, so nothing
     # sits on a public interface. OPENSHIP_BIND_ADDR opts into a public/LAN interface
@@ -592,7 +592,7 @@ ${edgeVolumeYaml("      ")}
       start_period: 40s
 
   dashboard:
-    image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-dashboard:\${OPENSHIP_VERSION:-latest}
+    image: \${OPENSHIP_IMAGE_REGISTRY:-${DEFAULT_IMAGE_REGISTRY}}/openship-dashboard:\${OPENSHIP_VERSION:-latest}
     restart: unless-stopped
     # Loopback by default (see api note); OPENSHIP_BIND_ADDR opts into a public interface.
     ports: ["\${OPENSHIP_BIND_ADDR:-127.0.0.1}:\${DASHBOARD_PORT:-3001}:\${DASHBOARD_PORT:-3001}"]
@@ -605,7 +605,7 @@ ${edgeVolumeYaml("      ")}
       api: { condition: service_healthy }
 
   edge:
-    image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-edge:\${OPENSHIP_VERSION:-latest}
+    image: \${OPENSHIP_IMAGE_REGISTRY:-${DEFAULT_IMAGE_REGISTRY}}/openship-edge:\${OPENSHIP_VERSION:-latest}
     # PINNED, and it must stay pinned: the api reaches the edge by NAME through
     # DockerEdgeExecutor (OPENSHIP_EDGE_CONTAINER above), and "ours" edge
     # detection greps \`docker ps --filter name=openship-edge\`. Without this,
@@ -3000,7 +3000,7 @@ function renderEnv(
  * ("dev") install — `openship-dev`, whose marker records the checkout dir.
  *
  * A dev install tracks a branch, so its `__CLI_VERSION__` names a release tag
- * that isn't published: pulling `ghcr.io/oblien/openship-*:<that version>` fails
+ * that isn't published: pulling `<registry>/openship-*:<that version>` fails
  * with `denied`. The checkout has the Dockerfiles, so build the three images we
  * own from it instead of pulling — same stack, same compose file, one override.
  * Returns null (→ pull path) when there's no checkout or no Dockerfiles in it.

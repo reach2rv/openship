@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { DEFAULT_IMAGE_REGISTRY } from "@repo/core";
 
 /**
  * `openship up` regenerates `.env` from scratch, so anything it doesn't write is
@@ -1053,7 +1054,7 @@ describe("pinnedImagesReady (#486)", () => {
     expect(pinnedImagesReady({ version: "9.9.9" })).toBe(false);
 
     const msg = err.mock.calls.map((c) => c.join(" ")).join("\n");
-    expect(msg).toContain("ghcr.io/oblien/openship-api:9.9.9");
+    expect(msg).toContain(`${DEFAULT_IMAGE_REGISTRY}/openship-api:9.9.9`);
     expect(msg).toContain("--image-version");
     expect(msg).toContain("OPENSHIP_VERSION=");
     err.mockRestore();

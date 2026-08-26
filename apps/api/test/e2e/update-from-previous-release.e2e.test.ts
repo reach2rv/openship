@@ -42,11 +42,12 @@ import { beforeAll, afterAll, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { DEFAULT_IMAGE_REGISTRY } from "@repo/core";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 
-const REGISTRY = process.env.OPENSHIP_E2E_IMAGE_REGISTRY ?? "ghcr.io/oblien";
+const REGISTRY = process.env.OPENSHIP_E2E_IMAGE_REGISTRY ?? DEFAULT_IMAGE_REGISTRY;
 const PROJECT = `openship-e2e-update-${process.pid}`;
 const SEED_ID = "e2e-upgrade-seed";
 const SEEDED_TABLES = ["organization", "project", "deployment", "servers"];

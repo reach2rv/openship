@@ -17,7 +17,15 @@
  */
 
 import { app, net, shell } from "electron";
-import { resolveDesktopUpdate, type GithubReleasePayload } from "@repo/core";
+import {
+  advisoryManifestUrl,
+  parseManifest,
+  RELEASES_LATEST_API,
+  resolveDesktopUpdate,
+  type Advisory,
+  type AdvisoryManifest,
+  type GithubReleasePayload,
+} from "@repo/core";
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -30,10 +38,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { advisoryManifestUrl, parseManifest, type Advisory, type AdvisoryManifest } from "@repo/core";
 import { isAllowedUpdateAssetUrl } from "./security";
-
-const RELEASES_API = "https://api.github.com/repos/oblien/openship/releases/latest";
 
 export interface UpdateAsset {
   name: string;
@@ -67,7 +72,7 @@ export type UpdateCheck = UpdateInfo | { available: false };
  */
 export async function checkForUpdate(): Promise<UpdateCheck> {
   try {
-    const res = await net.fetch(RELEASES_API, {
+    const res = await net.fetch(RELEASES_LATEST_API, {
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "Openship-Desktop",
