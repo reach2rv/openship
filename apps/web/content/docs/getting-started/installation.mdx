@@ -26,18 +26,18 @@ bundle that runs under **Node** — it uses your system Node when it's recent en
 an official Node build just for Openship, never touching your global tools. No Node or npm setup required.
 
 ```bash
-curl -fsSL https://get.openship.io | sh
+curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh
 ```
 
 On **Windows**, run this in PowerShell instead:
 
 ```powershell
-irm https://git.openship.io/windows | iex
+irm https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.ps1 | iex
 ```
 
 <Callout title="Pin a version" type="info">
 Want a specific release instead of the latest? Set `OPENSHIP_VERSION` on the `sh` that runs the script —
-not on `curl` — e.g. `curl -fsSL https://get.openship.io | OPENSHIP_VERSION=0.1.9 sh`. (A `VAR=… curl … | sh`
+not on `curl` — e.g. `curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | OPENSHIP_VERSION=0.1.9 sh`. (A `VAR=… curl … | sh`
 prefix sets the variable only for `curl`; the piped `sh` never sees it.)
 </Callout>
 
@@ -100,14 +100,14 @@ Want to preview an unreleased build — a branch, a tag, or `main` ahead of the 
 CLI **from source** (the same way `bun dev` does) and installs it as a **separate `openship-dev` command**:
 
 ```bash
-curl -fsSL https://get.openship.io/dev | sh
+curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | sh
 ```
 
 Pick a branch/tag with `OPENSHIP_REF` (default `main`) — set it on the `sh` that runs the script, not on
 `curl`, or the piped `sh` never sees it:
 
 ```bash
-curl -fsSL https://get.openship.io/dev | OPENSHIP_REF=my-branch sh
+curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | OPENSHIP_REF=my-branch sh
 ```
 
 The from-source build runs **fully isolated** from a production install — its own home (`~/.openship-dev`),

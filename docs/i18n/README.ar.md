@@ -3,7 +3,7 @@
 <p align="center" dir="rtl">منصة <strong><bdi dir="ltr">Open Source</bdi></strong> للنشر والاستضافة الذاتية مع <strong><bdi dir="ltr">CI/CD</bdi></strong> مدمج.<br>ادفع الـ <bdi dir="ltr">Code</bdi>، ابنِ الحاويات، وأدر بنيتك التحتية من تطبيق سطح المكتب أو لوحة التحكم عبر <bdi dir="ltr">Web</bdi> أو <strong><bdi dir="ltr">CLI</bdi></strong>.</p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/openship"><img src="https://img.shields.io/npm/v/openship?color=0b7285&label=npm" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@reach2rv/openship"><img src="https://img.shields.io/npm/v/@reach2rv/openship?color=0b7285&label=npm" alt="npm version" /></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
   <a href="https://openship.io"><img src="https://img.shields.io/badge/website-openship.io-0b7285" alt="Website" /></a>
 </p>
@@ -32,7 +32,7 @@
 ## البدء السريع
 
 ```bash
-npm i -g openship
+npm i -g @reach2rv/openship
 openship init
 ```
 

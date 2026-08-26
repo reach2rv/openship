@@ -192,7 +192,7 @@ packages **per Node version**, so installing a newer Node leaves the CLI behind 
 
 1. Check what you're on: `node --version`. Below 22, either accept the CLI's offer to fetch its own
    Node, upgrade yourself, or skip the question entirely with
-   `curl -fsSL https://get.openship.io | sh` — that installer never touches the Node you have.
+   `curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh` — that installer never touches the Node you have.
 2. Scripting it? `OPENSHIP_VENDOR_NODE=1` accepts the download without a prompt (`0` declines).
 3. After upgrading Node with a version manager, reinstall the CLI on the new version: `npm i -g openship`.
 4. Still not found? The official installer puts it in `~/.openship/bin` — open a new terminal, or

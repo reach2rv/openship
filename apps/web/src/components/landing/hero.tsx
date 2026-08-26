@@ -21,7 +21,7 @@ export function Hero() {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText("npm i -g openship");
+    navigator.clipboard.writeText("npm i -g @reach2rv/openship");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -47,7 +47,7 @@ export function Hero() {
           className="animate-fade-in-up group mb-7 inline-flex items-center gap-2 font-mono text-[13px] tracking-[0.01em] th-text-muted transition-colors hover:th-text-secondary"
         >
           <span className="opacity-50">$</span>
-          <span>npm i -g openship</span>
+          <span>npm i -g @reach2rv/openship</span>
           <span className="ml-0.5 opacity-0 transition-opacity group-hover:opacity-50">
             {copied ? (
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

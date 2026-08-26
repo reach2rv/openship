@@ -30,7 +30,7 @@
  */
 import { Command, Option } from "commander";
 import { spawnSync } from "node:child_process";
-import { resolveCliUpdatePlan, cliInstallCommand, type CliPackageManager } from "@repo/core";
+import { CURL_INSTALL, NPM_PACKAGE, resolveCliUpdatePlan, cliInstallCommand, type CliPackageManager } from "@repo/core";
 import { resolveLatestTag } from "../lib/github-releases";
 import { restart as restartService, selfInvocation } from "../lib/service";
 import { readInstallMethod, composeUpdate } from "../lib/compose";
@@ -191,7 +191,7 @@ async function runSourceUpdate(source: SourceInstall, opts: UpdateOpts): Promise
   }
 }
 
-const REINSTALL_HINT = "curl -fsSL https://get.openship.io | sh";
+const REINSTALL_HINT = CURL_INSTALL;
 
 /**
  * Update a tarball install: re-download the verified payload for the latest tag
@@ -353,7 +353,7 @@ export const updateCommand = new Command("update")
     }
 
     const pm = detectPackageManager(opts.via);
-    const ref = `openship@${latest}`;
+    const ref = `${NPM_PACKAGE}@${latest}`;
     const argv = pm === "bun" ? ["add", "-g", ref] : ["install", "-g", ref];
 
     info(`Updating v${current} → v${latest} (${cliInstallCommand(pm, latest)})...`);

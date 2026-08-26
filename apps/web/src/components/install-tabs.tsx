@@ -6,22 +6,21 @@ import { usePlatform } from "@/hooks/use-platform";
 type TabKey = "unix" | "windows";
 
 /**
- * One-line installers for the self-hosted server. macOS/Linux go through the
- * pretty domain (Cloudflare → raw install.sh); Windows hits the raw script
- * directly so it works with no extra redirect rule.
+ * One-line installers for the self-hosted server. Scripts are served from this
+ * fork's GitHub repo — get.openship.io / git.openship.io are upstream.
  */
 const TABS: { key: TabKey; label: string; prompt: string; cmd: string }[] = [
   {
     key: "unix",
     label: "macOS / Linux",
     prompt: "$",
-    cmd: "curl -fsSL https://get.openship.io | sh",
+    cmd: "curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh",
   },
   {
     key: "windows",
     label: "Windows",
     prompt: "PS>",
-    cmd: "irm https://git.openship.io/windows | iex",
+    cmd: "irm https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.ps1 | iex",
   },
 ];
 

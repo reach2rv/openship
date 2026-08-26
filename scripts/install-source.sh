@@ -1,7 +1,7 @@
 #!/bin/sh
-# Openship FROM-SOURCE installer — https://get.openship.io/dev
+# Openship FROM-SOURCE installer — this fork's script, not get.openship.io/dev (upstream).
 #
-#   curl -fsSL https://get.openship.io/dev | sh
+#   curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | sh
 #
 # Builds the Openship CLI from a git checkout (the same way `bun dev` does) and
 # installs it as a SEPARATE `openship-dev` command that runs fully isolated from

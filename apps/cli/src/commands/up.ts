@@ -77,7 +77,7 @@ interface UpOpts {
   ref?: string;
   /** Build from an existing local checkout instead of cloning. */
   source?: string;
-  /** Git remote to clone for --from-source (default: oblien/openship). */
+  /** Git remote to clone for --from-source (default: reach2rv/openship). */
   repo?: string;
   /** Install via Docker Compose (published images). Default when Docker is present on Linux. */
   compose?: boolean;
@@ -228,7 +228,7 @@ export const upCommand = new Command("up")
   .option("--from-source", "Preview: build + run Openship from source (a branch) instead of a published release — runs attached")
   .option("--ref <branch>", "Git branch/tag/sha to build with --from-source (default: main)")
   .option("--source <path>", "Build from an existing local Openship checkout instead of cloning")
-  .option("--repo <url>", "Git remote to clone for --from-source (default: oblien/openship)")
+  .option("--repo <url>", "Git remote to clone for --from-source (default: reach2rv/openship)")
   .option("--compose", "Install via Docker Compose using the published images (postgres + redis + api + dashboard + edge on :80/:443). Default when Docker is available on Linux.")
   .option("--bare", "Install as the bare process service (embedded DB, no Docker) instead of Compose")
   .option(
@@ -753,7 +753,7 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
       if (!existsSync(serverEntry)) {
         console.error(
           chalk.red("\n  Bundled server not found in this install.") +
-            chalk.dim("\n  Reinstall with `openship update` (or `npm i -g openship`).\n"),
+            chalk.dim("\n  Reinstall with `openship update` (or `npm i -g @reach2rv/openship`).\n"),
         );
         process.exit(1);
       }

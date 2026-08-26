@@ -37,7 +37,7 @@ Add the server (SSH), then **install Openship onto it like any other app** — p
 Install the CLI, then just run **`openship`** — an interactive wizard walks you through it: it creates the **first admin**, attaches your domain, and installs Openship as a boot service. Run `openship` again later to manage the running instance.
 
 ```bash
-curl -fsSL https://get.openship.io | sh      # install  (or: npm i -g openship)
+curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh      # install  (or: npm i -g @reach2rv/openship)
 openship                                     # interactive setup, then control panel
 ```
 

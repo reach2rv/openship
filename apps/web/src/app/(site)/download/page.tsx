@@ -48,12 +48,12 @@ const DOWNLOADS: DownloadEntry[] = [
 const DOWNLOAD_BASE = "https://github.com/reach2rv/openship/releases/latest/download";
 
 const CLI_OPTIONS = [
-  { manager: "macOS / Linux", cmd: "curl -fsSL https://get.openship.io | sh" },
-  { manager: "Windows",       cmd: "irm https://git.openship.io/windows | iex" },
-  { manager: "npm",  cmd: "npm i -g openship" },
-  { manager: "pnpm", cmd: "pnpm add -g openship" },
-  { manager: "yarn", cmd: "yarn global add openship" },
-  { manager: "bun",  cmd: "bun add -g openship" },
+  { manager: "macOS / Linux", cmd: "curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh" },
+  { manager: "Windows",       cmd: "irm https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.ps1 | iex" },
+  { manager: "npm",  cmd: "npm i -g @reach2rv/openship" },
+  { manager: "pnpm", cmd: "pnpm add -g @reach2rv/openship" },
+  { manager: "yarn", cmd: "yarn global add @reach2rv/openship" },
+  { manager: "bun",  cmd: "bun add -g @reach2rv/openship" },
 ];
 
 const STEPS = [
@@ -721,13 +721,13 @@ export default function DownloadPage() {
             </p>
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3.5">
               <button
-                onClick={() => handleCopy("npm i -g openship")}
+                onClick={() => handleCopy("npm i -g @reach2rv/openship")}
                 className="th-btn group rounded-full px-7 py-3 text-[15px] font-medium"
               >
                 <span className="font-mono opacity-60">$</span>
-                npm i -g openship
+                npm i -g @reach2rv/openship
                 <span className="ml-1.5 text-[11px] uppercase tracking-[0.08em] opacity-50">
-                  {copied === "npm i -g openship" ? "copied" : "copy"}
+                  {copied === "npm i -g @reach2rv/openship" ? "copied" : "copy"}
                 </span>
               </button>
               <Link href="/docs" className="th-btn-ghost group rounded-full px-7 py-3 text-[15px] font-medium">

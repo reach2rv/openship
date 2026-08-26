@@ -1,14 +1,18 @@
 {
-  "name": "openship",
+  "name": "@reach2rv/openship",
   "version": "0.6.9-dotnet.0",
   "description": "Openship CLI - deploy, manage, and open your Openship platform from the terminal",
   "license": "Apache-2.0",
+  "author": "reach2rv",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oblien/openship.git",
+    "url": "https://github.com/reach2rv/openship.git",
     "directory": "apps/cli"
   },
-  "homepage": "https://github.com/oblien/openship",
+  "homepage": "https://github.com/reach2rv/openship",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "openship",
     "deploy",

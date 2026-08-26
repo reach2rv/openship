@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/openship"><img src="https://img.shields.io/npm/v/openship?color=0b7285&label=npm" alt="npm 버전" /></a>
+  <a href="https://www.npmjs.com/package/@reach2rv/openship"><img src="https://img.shields.io/npm/v/@reach2rv/openship?color=0b7285&label=npm" alt="npm 버전" /></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="라이선스" /></a>
   <a href="https://openship.io"><img src="https://img.shields.io/badge/website-openship.io-0b7285" alt="웹사이트" /></a>
 </p>
@@ -77,7 +77,7 @@ Linux에서는 `chmod +x Openship.AppImage && ./Openship.AppImage`를 실행합�
 API와 대시보드를 포함한 CLI를 설치한 뒤 **`openship`**을 실행하세요. 대화형 마법사가 첫 관리자를 만들고 도메인을 연결한 뒤 Openship을 부팅 서비스로 설치합니다. 인스턴스를 관리하려면 언제든 같은 명령을 다시 실행하면 됩니다.
 
 ```bash
-curl -fsSL https://get.openship.io | sh          # 설치 (또는 npm i -g openship)
+curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh          # 설치 (또는 npm i -g @reach2rv/openship)
 openship                                          # 안내에 따른 설정 후 제어 패널 열기
 ```
 
@@ -98,8 +98,8 @@ openship up --public-url https://openship.example.com   # 도메인에서 대시
 > **미공개 개발 빌드 미리 보기.** 다음 릴리스 전의 `main`, 브랜치, 태그에 있는 소스에서 직접 빌드한 CLI를 사용하려면 source build를 설치하세요.
 >
 > ```bash
-> curl -fsSL https://get.openship.io/dev | sh                  # main (기본값)
-> curl -fsSL https://get.openship.io/dev | OPENSHIP_REF=dev sh  # 브랜치/태그(var는 curl이 아닌 sh에 지정)
+> curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | sh                  # main (기본값)
+> curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | OPENSHIP_REF=dev sh  # 브랜치/태그(var는 curl이 아닌 sh에 지정)
 > openship-dev                                     # 같은 CLI, 소스에서 빌드
 > openship-dev update                              # 최신 소스 가져오기 + 다시 빌드(릴리스 불필요)
 > ```

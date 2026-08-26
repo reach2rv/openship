@@ -1,6 +1,6 @@
-# Openship installer (Windows) — https://get.openship.io
+# Openship installer (Windows) — this fork's script, not git.openship.io (upstream).
 #
-#   irm https://git.openship.io/windows | iex
+#   irm https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.ps1 | iex
 #
 # Installs the Openship CLI as a self-contained, sha256-verified payload that
 # runs under NODE. Node is the shipped runtime: this prefers a system `node`
@@ -13,6 +13,8 @@
 #
 # Env overrides:
 #   $env:OPENSHIP_VERSION = "0.5.0"        pin a CLI version (default: latest)
+#   $env:OPENSHIP_REPO    = "owner/repo"   GitHub repo for release assets
+#                                          (default: reach2rv/openship)
 #   $env:OPENSHIP_HOME    = "..."          install root (data dir, runtime, launcher)
 #   $env:OPENSHIP_CLI_ASSET_URL = "..."    download the payload tarball from here
 #                                          instead of GitHub (its .sha256 sidecar
@@ -23,7 +25,7 @@ $ProgressPreference = "SilentlyContinue"  # PS5.1's progress bar cripples downlo
 function Info($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Fail($m) { Write-Error $m; exit 1 }
 
-$Repo      = "oblien/openship"
+$Repo      = if ($env:OPENSHIP_REPO) { $env:OPENSHIP_REPO } else { "reach2rv/openship" }
 $NodeMajor = 22
 $NodeDist  = "https://nodejs.org/dist"
 
@@ -152,7 +154,7 @@ if exist "%VENDORED%" (
   "%VENDORED%" "%CLI%" %*
   exit /b !errorlevel!
 )
-echo openship: no Node ^>= 22 found ^(system or vendored^). Reinstall: irm https://git.openship.io/windows ^| iex 1>&2
+echo openship: no Node ^>= 22 found ^(system or vendored^). Reinstall: irm https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.ps1 ^| iex 1>&2
 exit /b 127
 '@
   Set-Content -Path $Launcher -Value $LauncherBody -Encoding ASCII

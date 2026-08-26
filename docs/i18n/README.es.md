@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/openship"><img src="https://img.shields.io/npm/v/openship?color=0b7285&label=npm" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@reach2rv/openship"><img src="https://img.shields.io/npm/v/@reach2rv/openship?color=0b7285&label=npm" alt="npm version" /></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
   <a href="https://openship.io"><img src="https://img.shields.io/badge/website-openship.io-0b7285" alt="Website" /></a>
 </p>
@@ -33,7 +33,7 @@
 ## Inicio rápido
 
 ```bash
-npm i -g openship
+npm i -g @reach2rv/openship
 openship init
 ```
 

@@ -54,7 +54,7 @@ if command -v node >/dev/null 2>&1 && node -e 'process.exit(+process.versions.no
 elif [ -x "$VENDORED_NODE" ]; then
   exec "$VENDORED_NODE" "$CLI" "$@"
 else
-  echo "openship: no Node >= ${NODE_MAJOR} found (system or vendored). Reinstall: curl -fsSL https://get.openship.io | sh" >&2
+  echo "openship: no Node >= ${NODE_MAJOR} found (system or vendored). Reinstall: curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh" >&2
   exit 127
 fi
 `;

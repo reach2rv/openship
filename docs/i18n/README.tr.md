@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/openship"><img src="https://img.shields.io/npm/v/openship?color=0b7285&label=npm" alt="npm sürümü" /></a>
+  <a href="https://www.npmjs.com/package/@reach2rv/openship"><img src="https://img.shields.io/npm/v/@reach2rv/openship?color=0b7285&label=npm" alt="npm sürümü" /></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Lisans" /></a>
   <a href="https://openship.io"><img src="https://img.shields.io/badge/website-openship.io-0b7285" alt="Web sitesi" /></a>
 </p>
@@ -60,7 +60,7 @@ Linux: `chmod +x Openship.AppImage && ./Openship.AppImage`. Bağlantılar her za
 API ve kontrol panelini birlikte içeren CLI'ı kurup **`openship`** komutunu çalıştırın. Etkileşimli sihirbaz ilk yöneticiyi oluşturur, alan adınızı yapılandırır ve Openship'i açılışta çalışan bir servis olarak kurar. Kurulumu daha sonra yönetmek için aynı komutu yeniden çalıştırabilirsiniz.
 
 ```bash
-curl -fsSL https://get.openship.io | sh             # kurulum (alternatif: npm i -g openship)
+curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh             # kurulum (alternatif: npm i -g @reach2rv/openship)
 openship                                            # etkileşimli kurulum ve kontrol paneli
 ```
 
@@ -176,7 +176,7 @@ bun scripts/release.ts 0.2.0        # açık sürüm numarası
 Etiketin gönderilmesi [`.github/workflows/release.yml`](../../.github/workflows/release.yml) iş akışını tetikler. Bu iş akışı:
 
 - **macOS, Windows ve Linux kurulum paketleri** ile sunucu arşivlerini ve SHA-256 dosyalarını oluşturur,
-- npm [OIDC güvenilir yayınlama](https://docs.npmjs.com/trusted-publishers) üzerinden **`openship` CLI paketini npm'de yayımlar** ve
+- npm `NPM_TOKEN` ile **`@reach2rv/openship` CLI paketini npm'de yayımlar** ve
 - oluşturulan dosyalarla bir **GitHub Release** yayımlar.
 
 Bir sürümü uygulama içi güncelleyicide **kritik** olarak işaretlemek veya öneri/bilgi notları eklemek için etiket oluşturmadan önce [`release-advisories.json`](../../release-advisories.json) dosyasına kayıt ekleyin. Genel sürüm notları [`CHANGELOG.md`](../../CHANGELOG.md) dosyasındadır.

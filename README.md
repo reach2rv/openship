@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/openship"><img src="https://img.shields.io/npm/v/openship?color=0b7285&label=npm" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@reach2rv/openship"><img src="https://img.shields.io/npm/v/@reach2rv/openship?color=0b7285&label=npm" alt="npm version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
   <a href="https://openship.io"><img src="https://img.shields.io/badge/website-openship.io-0b7285" alt="Website" /></a>
 </p>
@@ -77,7 +77,7 @@ From the desktop app you connect a server (SSH) or Openship Cloud and deploy to 
 Install the CLI (it bundles the API + dashboard), then run **`openship`** — an interactive wizard creates the first admin, wires your domain, and installs Openship as a boot service. Run it again anytime to manage the instance.
 
 ```bash
-curl -fsSL https://get.openship.io | sh          # install  (or: npm i -g openship — needs Node 22+)
+curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh          # install  (or: npm i -g @reach2rv/openship — needs Node 22+)
 openship                                          # guided setup, then control panel
 ```
 
@@ -101,8 +101,8 @@ A self-hosted instance **always requires login** (the admin you create in setup)
 > **Preview an unreleased build (dev).** To run the CLI built straight from source — a branch, tag, or `main` ahead of the next release — install the from-source build:
 >
 > ```bash
-> curl -fsSL https://get.openship.io/dev | sh                  # main (default)
-> curl -fsSL https://get.openship.io/dev | OPENSHIP_REF=dev sh  # a branch/tag (var goes on sh, not curl)
+> curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | sh                  # main (default)
+> curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | OPENSHIP_REF=dev sh  # a branch/tag (var goes on sh, not curl)
 > openship-dev                                     # same CLI, built from source
 > openship-dev update                              # pull latest source + rebuild (no release needed)
 > ```

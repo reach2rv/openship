@@ -563,10 +563,11 @@ jobs:
       always() &&
       needs.gate.result == 'success' &&
       (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
-    # OIDC trusted publishing: npm verifies this workflow's identity instead of
-    # a long-lived token. id-token:write lets the runner mint the OIDC token.
+    # Auth is the fork's npm user (secret NPM_TOKEN), not upstream OIDC.
+    # Trusted-publisher OIDC is bound to oblien's `openship` package and would
+    # either fail or publish into the wrong account. Granular automation token
+    # on the @reach2rv npm user, stored as repo secret NPM_TOKEN.
     permissions:
-      id-token: write
       contents: read
     steps:
       - name: Checkout
@@ -589,7 +590,7 @@ jobs:
           node-version: '24'
           registry-url: https://registry.npmjs.org
 
-      - name: Ensure npm supports trusted publishing (OIDC)
+      - name: Ensure recent npm
         run: npm install -g npm@latest
 
       - name: Restore bun cache
@@ -614,8 +615,19 @@ jobs:
       - name: Release smoke — built CLI launches + server boots
         run: SMOKE_SKIP_BUILD=1 bash apps/cli/scripts/release-smoke.sh
 
-      - name: Publish to npm (OIDC trusted publishing — no token)
+      - name: Require fork npm token
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN is not set. Create an npm granular token for the @reach2rv account (publish on @reach2rv/openship) and add it as a repo secret named NPM_TOKEN."
+            exit 1
+          fi
+
+      - name: Publish to npm (fork account via NPM_TOKEN)
         working-directory: apps/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"

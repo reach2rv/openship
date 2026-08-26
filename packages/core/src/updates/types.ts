@@ -104,6 +104,22 @@ export interface UpdateState {
 
 export const GITHUB_REPO = "reach2rv/openship";
 
+/** npm package this fork publishes. Unscoped `openship` is upstream (oblien). */
+export const NPM_PACKAGE = "@reach2rv/openship";
+
+/** Branch that hosts the installer scripts (release *assets* come from tags). */
+const INSTALL_SCRIPT_REF = "main";
+const INSTALL_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/${INSTALL_SCRIPT_REF}`;
+
+export const INSTALL_SH_URL = `${INSTALL_RAW}/scripts/install.sh`;
+export const INSTALL_PS1_URL = `${INSTALL_RAW}/scripts/install.ps1`;
+export const INSTALL_SOURCE_SH_URL = `${INSTALL_RAW}/scripts/install-source.sh`;
+
+/** One-liners. `get.openship.io` / `git.openship.io` are upstream and must not be used. */
+export const CURL_INSTALL = `curl -fsSL ${INSTALL_SH_URL} | sh`;
+export const PS_INSTALL = `irm ${INSTALL_PS1_URL} | iex`;
+export const CURL_INSTALL_DEV = `curl -fsSL ${INSTALL_SOURCE_SH_URL} | sh`;
+
 /** GitHub API: the latest published (non-prerelease) release. */
 export const RELEASES_LATEST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 

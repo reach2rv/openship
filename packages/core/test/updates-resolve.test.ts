@@ -8,6 +8,12 @@ import {
   type GithubReleasePayload,
 } from "../src/updates/resolve";
 import { parseManifest } from "../src/updates/advisories";
+import {
+  CURL_INSTALL,
+  CURL_INSTALL_DEV,
+  GITHUB_REPO,
+  PS_INSTALL,
+} from "../src/updates/types";
 
 // A realistic `releases/latest` payload — asset names match .github/workflows/release.yml.
 const RELEASE_0_2_0: GithubReleasePayload = {
@@ -154,8 +160,19 @@ describe("resolveCliUpdatePlan + cliInstallCommand", () => {
   });
 
   it("builds the right global install command per package manager", () => {
-    expect(cliInstallCommand("bun", "0.2.0")).toBe("bun add -g openship@0.2.0");
-    expect(cliInstallCommand("npm", "0.2.0")).toBe("npm install -g openship@0.2.0");
-    expect(cliInstallCommand("bun", "")).toBe("bun add -g openship@latest");
+    expect(cliInstallCommand("bun", "0.2.0")).toBe("bun add -g @reach2rv/openship@0.2.0");
+    expect(cliInstallCommand("npm", "0.2.0")).toBe("npm install -g @reach2rv/openship@0.2.0");
+    expect(cliInstallCommand("bun", "")).toBe("bun add -g @reach2rv/openship@latest");
+  });
+});
+
+describe("fork install URLs", () => {
+  it("curl/irm one-liners load scripts from this fork, not get.openship.io", () => {
+    expect(CURL_INSTALL).toContain(GITHUB_REPO);
+    expect(CURL_INSTALL).toContain("scripts/install.sh");
+    expect(CURL_INSTALL).not.toContain("get.openship.io");
+    expect(PS_INSTALL).toContain("scripts/install.ps1");
+    expect(PS_INSTALL).not.toContain("git.openship.io");
+    expect(CURL_INSTALL_DEV).toContain("scripts/install-source.sh");
   });
 });

@@ -9,7 +9,7 @@
 
 import { compareSemver } from "./semver";
 import { findAnnouncement } from "./advisories";
-import type { Advisory, AdvisoryManifest } from "./types";
+import { NPM_PACKAGE, type Advisory, type AdvisoryManifest } from "./types";
 
 /** The GitHub `releases/latest` fields we consume. */
 export interface GithubReleasePayload {
@@ -112,6 +112,6 @@ export function resolveCliUpdatePlan(current: string, latest: string): CliUpdate
 
 /** The global re-install command for the detected package manager. */
 export function cliInstallCommand(pm: CliPackageManager, version: string): string {
-  const ref = `openship@${version || "latest"}`;
+  const ref = `${NPM_PACKAGE}@${version || "latest"}`;
   return pm === "bun" ? `bun add -g ${ref}` : `npm install -g ${ref}`;
 }

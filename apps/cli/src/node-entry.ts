@@ -41,7 +41,8 @@ const HARD_FLOOR = 20;
 /** Supported floor (package.json engines, scripts/install.sh, .node-version). */
 const SUPPORTED = 22;
 
-const INSTALLER = "curl -fsSL https://get.openship.io | sh";
+const INSTALLER =
+  "curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh";
 
 const CLI_PATH = fileURLToPath(new URL("./index.js", import.meta.url));
 const log = (msg: string) => process.stderr.write(`${msg}\n`);
@@ -89,7 +90,7 @@ if (tooOld) {
         `  fetches its own Node ${SUPPORTED} without asking.\n\n` +
         `If you upgrade Node with a version manager (nvm, fnm, volta), global packages\n` +
         `live per Node version — reinstall the CLI afterwards or the command will go\n` +
-        `missing: npm i -g openship\n\n`,
+        `missing: npm i -g @reach2rv/openship\n\n`,
     );
     process.exit(1);
   }
