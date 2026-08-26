@@ -62,7 +62,10 @@ COPY apps/email/docker/ /opt/openship-mail/
 # Three things are required for this step to actually install the stack (issue #493):
 #
 #   1. IREDMAIL_HOSTNAME — satisfies check_hostname's FQDN requirement (GOTCHA above).
-#      /etc/hosts is also written so anything that shells out to `hostname -f` agrees.
+#      BuildKit bind-mounts /etc/hosts read-only for every RUN (appending it
+#      fails with "Read-only file system" and, under `set -eu`, aborts before
+#      apt/iRedMail). `--add-host` is the BuildKit-native equivalent: it injects
+#      the placeholder FQDN into that ephemeral hosts file for this layer only.
 #   2. `apt-get update` FIRST — iRedMail's pkgs/get_all.sh installs its own bootstrap
 #      tools (wget, dialog, dirmngr) BEFORE it runs its own `apt update`. The previous
 #      layer ends with `rm -rf /var/lib/apt/lists/*`, so without a refresh here that
@@ -78,10 +81,9 @@ COPY apps/email/docker/ /opt/openship-mail/
 # The binary gate is in THIS layer on purpose. A separate RUN after `|| true`
 # lets BuildKit cache an empty install forever and only fail the next layer —
 # which is how a binary-less image kept rebuilding as a cache hit.
-RUN set -eu; \
+RUN --add-host=mail.build.invalid:127.0.0.1 --add-host=mail:127.0.0.1 \
+    set -eu; \
     cp /opt/openship-mail/build-config /opt/iRedMail-engine/config; \
-    grep -q 'mail.build.invalid' /etc/hosts || \
-      printf '127.0.0.1 mail.build.invalid mail localhost\n' >> /etc/hosts; \
     apt-get update; \
     apt-get install -y --no-install-recommends wget dialog dirmngr; \
     cd /opt/iRedMail-engine; \
