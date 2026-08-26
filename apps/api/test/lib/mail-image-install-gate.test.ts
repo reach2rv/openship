@@ -29,9 +29,9 @@ describe("openship-mail install gate (issue #493)", () => {
     expect(installRun).toContain("FATAL: iRedMail install left mail binaries missing");
     expect(installRun).toContain("doveadm pw -s SSHA512");
     expect(installRun).toContain("IREDMAIL_HOSTNAME=mail.build.invalid");
-    // BuildKit mounts /etc/hosts read-only; writing it aborts this RUN under set -eu.
-    expect(installRun).toContain("--add-host=mail.build.invalid:127.0.0.1");
+    // BuildKit mounts /etc/hosts read-only; RUN --add-host is not a Dockerfile flag.
     expect(installRun).not.toMatch(/>>\s*\/etc\/hosts/);
+    expect(installRun).not.toMatch(/--add-host=/);
   });
 
   it("does not leave the binary gate in a later RUN than the installer", () => {
