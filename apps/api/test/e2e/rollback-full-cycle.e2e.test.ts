@@ -69,6 +69,16 @@ async function get(url: string, attempts = 60): Promise<string> {
   throw new Error(`${url} never answered: ${String(lastErr)}`);
 }
 
+async function publishedPort(runtime: DockerRuntime, containerId: string): Promise<number> {
+  const info = await runtime.docker.getContainer(containerId).inspect();
+  const binding = info.NetworkSettings.Ports?.[`${APP_PORT}/tcp`]?.[0]?.HostPort;
+  const port = Number(binding);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`container ${containerId} has no valid ${APP_PORT}/tcp host publish`);
+  }
+  return port;
+}
+
 /** The deploy runs in the background (kickoffBuild fires and forgets), so wait
  *  for the row the restore created to reach a terminal status. */
 async function waitForRestore(
@@ -376,10 +386,14 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     // needed source could not have succeeded.
     expect((await repos.project.findById(project.id))!.gitUrl).toBeFalsy();
 
-    // And v1's bytes are serving again, through the pipeline's own deploy step.
-    expect(await get(`http://127.0.0.1:${hostPort}/version.txt`)).toBe("v1");
-
     const info = await runtime.docker.getContainer(row.containerId!).inspect();
+    const restoredPort = await publishedPort(runtime, row.containerId!);
+    // The allocator is authoritative under parallel E2E load: another suite may
+    // claim the sampled preferred port between freePort() and this rollback.
+    // Persistence, Docker's real bind, and the reachable endpoint must agree.
+    expect((await repos.project.findById(project.id))!.hostPort).toBe(restoredPort);
+    expect(await get(`http://127.0.0.1:${restoredPort}/version.txt`)).toBe("v1");
+
     expect(info.Config.Env).toContain("APP_VERSION=v1"); // frozen env, not today's
     expect(info.HostConfig.Binds ?? []).toContain(`openship-${project.slug}-data:/data`);
     expect(info.Config.Labels["openship.deployment"]).toBe(restore.id);
@@ -396,13 +410,18 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     const { rows } = await repos.deployment.listByProject(project.id, { perPage: 50 });
     const v2 = rows.find((r) => r.imageRef === TAG_V2)!;
     const known = new Set(rows.map((r) => r.id));
+    const previousPort = (await repos.project.findById(project.id))!.hostPort;
 
     await rollbackMod.rollback(v2.id);
 
     const restore = await waitForRestore(project.id, known);
     expect(restore.status, restore.errorMessage ?? "no error recorded").toBe("ready");
     expect(restore.imageRef).toBe(TAG_V2);
-    expect(await get(`http://127.0.0.1:${hostPort}/version.txt`)).toBe("v2");
+    const row = (await repos.deployment.findById(restore.id))!;
+    const restoredPort = await publishedPort(runtime, row.containerId!);
+    expect(restoredPort).toBe(previousPort);
+    expect((await repos.project.findById(project.id))!.hostPort).toBe(restoredPort);
+    expect(await get(`http://127.0.0.1:${restoredPort}/version.txt`)).toBe("v2");
     // Version numbering follows the COMMIT, so this is v2 again — not v4.
     expect((await repos.deployment.findById(restore.id))!.version).toBe(2);
   }, 300_000);
