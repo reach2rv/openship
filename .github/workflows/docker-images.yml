@@ -191,7 +191,43 @@ jobs:
           docker info
           docker version
 
+      # First tagged publish on a fork has no predecessor in THIS registry
+      # (git may still have v0.6.9). Failing that pull skipped merge-images and
+      # left only untagged digests — operators then hit #486 on :this-version.
+      # Skip the upgrade suite when the previous api tag is unpublished; once
+      # a tag exists here, the next release runs the real update E2E.
+      - name: Probe previous api image
+        id: pred
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          at_head="$(git tag --points-at HEAD || true)"
+          old=""
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            case "$t" in *-* ) continue ;; esac
+            printf '%s\n' "$at_head" | grep -qxF "$t" && continue
+            old="${t#v}"
+            break
+          done <<EOF
+          $(git tag --list 'v*.*.*' --sort=-v:refname)
+          EOF
+          if [ -z "$old" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No previous stable git tag — skipping update E2E."
+            exit 0
+          fi
+          echo "old=${old}" >> "$GITHUB_OUTPUT"
+          if docker manifest inspect "${REGISTRY}/openship-api:${old}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${REGISTRY}/openship-api:${old} is not in this registry. Skipping update E2E so merge-images can publish the first pullable tags."
+          fi
+
       - name: Run the update E2E
+        if: steps.pred.outputs.exists == 'true'
         env:
           RUN_DOCKER_E2E: "1"
           E2E_SCOPE: update
