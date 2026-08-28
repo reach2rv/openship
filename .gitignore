@@ -56,3 +56,7 @@ pnpm-debug.log*
 .react-router
 .wrangler
 next-env.d.ts
+
+# Fixture compiler caches (local language-detect builds)
+fixtures/deploy/**/obj/
+fixtures/deploy/**/.gradle/
