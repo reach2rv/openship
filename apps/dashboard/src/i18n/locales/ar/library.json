@@ -191,7 +191,7 @@
     "noMatching": "لا توجد مستودعات مطابقة",
     "noMatchingDesc": "جرّب بحثًا آخر.",
     "emptyOrgs": "لا توجد مؤسسات Azure DevOps",
-    "emptyOrgsDesc": "الحساب المتصل بلا مؤسسات، أو أن PAT يفتقد صلاحية Code (Read).",
+    "emptyOrgsDesc": "سجّل الدخول عبر Microsoft، أو أدخل اسم المؤسسة بجانب PAT في إعدادات Git. رمز Code (Read) وحده لا يكتشف المؤسسات.",
     "loading": "جارٍ تحميل المستودعات…"
   }
 }

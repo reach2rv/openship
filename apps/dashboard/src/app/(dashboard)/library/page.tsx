@@ -240,6 +240,7 @@ export default function LibraryPage() {
               repos={azureRepos.repos}
               loading={azureRepos.loading}
               connected={Boolean(azureStatus?.connected)}
+              oauth={Boolean(azureStatus?.oauth)}
               onConnect={() => void connectAzure()}
               connecting={azureConnecting}
               oauthConfigured={azureStatus?.oauthConfigured}

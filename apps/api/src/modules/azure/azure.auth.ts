@@ -41,15 +41,36 @@ export async function getInstancePat(): Promise<string | null> {
   }
 }
 
-export async function setInstancePat(token: string | null): Promise<void> {
+export async function setInstancePat(
+  token: string | null,
+  organization: string | null = null,
+): Promise<void> {
   if (env.CLOUD_MODE) {
     throw new Error("Azure instance PAT is not available in cloud mode");
   }
   await repos.instanceSettings.upsert(
     token
-      ? { azurePatEncrypted: encrypt(token), azurePatSetAt: new Date() }
-      : { azurePatEncrypted: null, azurePatSetAt: null },
+      ? {
+          azurePatEncrypted: encrypt(token),
+          azurePatSetAt: new Date(),
+          azurePatOrg: organization,
+        }
+      : { azurePatEncrypted: null, azurePatSetAt: null, azurePatOrg: null },
   );
+}
+
+export async function setInstancePatOrg(organization: string): Promise<void> {
+  if (env.CLOUD_MODE) {
+    throw new Error("Azure instance PAT is not available in cloud mode");
+  }
+  await repos.instanceSettings.upsert({ azurePatOrg: organization });
+}
+
+export async function getInstancePatOrg(): Promise<string | null> {
+  if (env.CLOUD_MODE) return null;
+  const settings = await repos.instanceSettings.get();
+  const org = settings?.azurePatOrg?.trim();
+  return org || null;
 }
 
 export async function hasInstancePat(): Promise<boolean> {
@@ -71,16 +92,11 @@ function authHeader(token: string): string {
   return `Basic ${Buffer.from(`:${token}`).toString("base64")}`;
 }
 
-export async function azureFetch<T>(
+export async function azureRequest<T>(
   url: string,
-  ctx: RequestContext,
+  token: string,
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
-  const token = await getCredential(ctx);
-  if (!token) {
-    throw new Error("Azure DevOps is not connected. Connect in Settings → Git or paste a PAT.");
-  }
-
   const parsed = new URL(url);
   if (!parsed.searchParams.has("api-version")) {
     parsed.searchParams.set("api-version", AZURE_API_VERSION);
@@ -99,6 +115,10 @@ export async function azureFetch<T>(
       body: init?.body ? JSON.stringify(init.body) : undefined,
       signal: controller.signal,
     });
+    // Azure DevOps returns 203 + a sign-in HTML page for a rejected PAT instead of 401.
+    if (res.status === 203) {
+      throw new Error("Azure DevOps authentication failed (203)");
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`Azure DevOps API error (${res.status}): ${text.slice(0, 300)}`);
@@ -108,6 +128,18 @@ export async function azureFetch<T>(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function azureFetch<T>(
+  url: string,
+  ctx: RequestContext,
+  init?: { method?: string; body?: unknown },
+): Promise<T> {
+  const token = await getCredential(ctx);
+  if (!token) {
+    throw new Error("Azure DevOps is not connected. Connect in Settings → Git or paste a PAT.");
+  }
+  return azureRequest<T>(url, token, init);
 }
 
 export async function azureFetchText(
@@ -129,7 +161,7 @@ export async function azureFetchText(
       headers: { Authorization: authHeader(token), Accept: "text/plain" },
       signal: controller.signal,
     });
-    if (!res.ok) return undefined;
+    if (res.status === 203 || !res.ok) return undefined;
     return await res.text();
   } finally {
     clearTimeout(timer);

@@ -197,6 +197,11 @@ export const instanceSettings = pgTable("instance_settings", {
    */
   azurePatEncrypted: text("azure_pat_encrypted"),
   azurePatSetAt: timestamp("azure_pat_set_at"),
+  /**
+   * Azure DevOps organization the instance PAT is scoped to.
+   * Org-scoped PATs cannot list accounts via VSSPS; the operator names the org.
+   */
+  azurePatOrg: text("azure_pat_org"),
 
   // ── Remote infra (edge / mail container) updates ────────────────────────────
   //

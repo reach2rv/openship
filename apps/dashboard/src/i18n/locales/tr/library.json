@@ -182,7 +182,7 @@
     "noMatching": "Eşleşen depo yok",
     "noMatchingDesc": "Farklı bir arama deneyin.",
     "emptyOrgs": "Azure DevOps kuruluşu yok",
-    "emptyOrgsDesc": "Bağlı hesabın kuruluşu yok veya PAT'te Code (Read) yok.",
+    "emptyOrgsDesc": "Microsoft ile oturum açın veya Git ayarlarındaki PAT'in yanına kuruluş adını yazın. Yalnızca Code (Read) içeren bir PAT kuruluşları bulamaz.",
     "loading": "Depolar yükleniyor…"
   }
 }

@@ -30,9 +30,10 @@ export const azureApi = {
 
   disconnect: () => api.post<{ success: boolean }>(endpoints.azure.disconnect),
 
-  setInstanceToken: (token: string | null) =>
+  setInstanceToken: (token: string | null, organization?: string | null) =>
     api.post<{ success: boolean; cleared?: boolean }>(endpoints.azure.instanceToken, {
       token,
+      organization: organization ?? null,
     }),
 
   listOrgs: () => api.get<{ orgs: string[] }>(endpoints.azure.orgs),

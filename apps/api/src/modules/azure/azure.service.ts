@@ -8,7 +8,7 @@ import { repos } from "@repo/db";
 import { encrypt } from "../../lib/encryption";
 import { sharedAzureWebhookUrl } from "../../lib/public-url";
 import type { RequestContext } from "../../lib/request-context";
-import { azureFetch, azureFetchText } from "./azure.auth";
+import { azureFetch, azureFetchText, azureRequest, getInstancePatOrg, getUserToken } from "./azure.auth";
 
 const ADO = "https://dev.azure.com";
 const VSSPS = "https://app.vssps.visualstudio.com";
@@ -62,7 +62,41 @@ interface AzureItem {
   gitObjectType?: string;
 }
 
-export async function listOrganizations(ctx: RequestContext): Promise<string[]> {
+const AZURE_ORG_SLUG = /^[A-Za-z0-9][A-Za-z0-9-]{0,255}$/;
+
+/** Organization slug from a typed name or a pasted Azure DevOps URL. */
+export function normalizeAzureOrganization(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  let slug = trimmed;
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      const vs = url.hostname.match(/^([^.]+)\.visualstudio\.com$/i);
+      if (vs?.[1]) slug = vs[1];
+      else if (url.hostname.replace(/^www\./i, "") === "dev.azure.com") {
+        slug = url.pathname.split("/").filter(Boolean)[0] ?? "";
+      } else {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+  } else {
+    slug = trimmed.replace(/^\/+|\/+$/g, "").split("/")[0] ?? "";
+  }
+  return AZURE_ORG_SLUG.test(slug) ? slug : null;
+}
+
+/**
+ * Org-scoped PATs cannot call VSSPS /accounts. Probe the org's own REST surface
+ * instead — that is what Code (Read) / Project (Read) actually grants.
+ */
+export async function verifyPatCanReadOrganization(token: string, org: string): Promise<void> {
+  await azureRequest(`https://dev.azure.com/${encodeURIComponent(org)}/_apis/projects?$top=1`, token);
+}
+
+async function listOrganizationsViaOauth(ctx: RequestContext): Promise<string[]> {
   const me = await azureFetch<AzureProfile>(`${VSSPS}/_apis/profile/profiles/me`, ctx);
   if (!me.id) return [];
   const accounts = await azureFetch<AzureList<AzureAccount>>(
@@ -72,6 +106,23 @@ export async function listOrganizations(ctx: RequestContext): Promise<string[]> 
   return (accounts.value ?? [])
     .map((a) => a.accountName)
     .filter((n): n is string => Boolean(n));
+}
+
+export async function listOrganizations(ctx: RequestContext): Promise<string[]> {
+  const [oauthToken, patOrg] = await Promise.all([
+    getUserToken(ctx.userId),
+    getInstancePatOrg(),
+  ]);
+  const fromPat = patOrg ? [patOrg] : [];
+  if (!oauthToken) return fromPat;
+
+  let fromOauth: string[] = [];
+  try {
+    fromOauth = await listOrganizationsViaOauth(ctx);
+  } catch {
+    fromOauth = [];
+  }
+  return [...new Set([...fromOauth, ...fromPat])];
 }
 
 export async function listRepos(ctx: RequestContext, org: string): Promise<AzureRepo[]> {

@@ -9,9 +9,11 @@ import { auth } from "../../lib/auth";
 import { getRequestContext } from "../../lib/request-context";
 import {
   azureOAuthConfigured,
+  getInstancePat,
   getUserToken,
   hasInstancePat,
   setInstancePat,
+  setInstancePatOrg,
 } from "./azure.auth";
 import * as azureService from "./azure.service";
 import { resolveProjectInfo } from "../deployments/prepare.service";
@@ -144,13 +146,52 @@ export async function setInstanceToken(c: Context) {
   if (env.CLOUD_MODE) {
     return c.json({ error: "Not available on Openship Cloud", code: "NOT_SUPPORTED" }, 400);
   }
-  const body = await c.req.json<{ token?: string | null }>().catch(() => null);
+  const body = await c.req.json<{ token?: string | null; organization?: string | null }>().catch(
+    () => null,
+  );
   const token = body?.token?.trim() ?? "";
+  const organization = azureService.normalizeAzureOrganization(body?.organization ?? "");
+
   if (!token) {
+    if (organization && (await hasInstancePat())) {
+      const existing = await getInstancePat();
+      if (!existing) {
+        return c.json({ error: "Save a PAT before setting the organization", code: "PAT_REQUIRED" }, 400);
+      }
+      try {
+        await azureService.verifyPatCanReadOrganization(existing, organization);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Azure DevOps rejected this PAT for that organization";
+        return c.json({ error: message, code: "AZURE_ORG_UNREACHABLE" }, 400);
+      }
+      await setInstancePatOrg(organization);
+      return c.json({ success: true });
+    }
     await setInstancePat(null);
     return c.json({ success: true, cleared: true });
   }
-  await setInstancePat(token);
+
+  if (!organization) {
+    return c.json(
+      {
+        error:
+          "An Azure DevOps organization is required with a PAT. Org-scoped tokens cannot list accounts.",
+        code: "AZURE_ORG_REQUIRED",
+      },
+      400,
+    );
+  }
+
+  try {
+    await azureService.verifyPatCanReadOrganization(token, organization);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Azure DevOps rejected this PAT for that organization";
+    return c.json({ error: message, code: "AZURE_ORG_UNREACHABLE" }, 400);
+  }
+
+  await setInstancePat(token, organization);
   return c.json({ success: true });
 }
 

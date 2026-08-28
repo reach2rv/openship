@@ -191,7 +191,7 @@
     "noMatching": "一致するリポジトリがありません",
     "noMatchingDesc": "別の検索を試してください。",
     "emptyOrgs": "Azure DevOps 組織がありません",
-    "emptyOrgsDesc": "接続アカウントに組織がないか、PAT に Code (Read) がありません。",
+    "emptyOrgsDesc": "Microsoft でサインインするか、Git 設定の PAT の横に組織名を入力してください。Code (Read) の PAT だけでは組織を検出できません。",
     "loading": "リポジトリを読み込み中…"
   }
 }

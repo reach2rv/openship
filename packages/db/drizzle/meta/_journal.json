@@ -827,6 +827,13 @@
       "when": 1789078907325,
       "tag": "0117_azure_devops",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1789165307325,
+      "tag": "0118_azure_pat_org",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,7 @@ interface AzureRepositoryListProps {
   repos: AzureRepo[];
   loading: boolean;
   connected: boolean;
+  oauth?: boolean;
   onConnect?: () => void;
   connecting?: boolean;
   oauthConfigured?: boolean;
@@ -27,6 +28,7 @@ export function AzureRepositoryList({
   repos,
   loading,
   connected,
+  oauth,
   onConnect,
   connecting,
   oauthConfigured,
@@ -35,6 +37,7 @@ export function AzureRepositoryList({
   const router = useRouter();
   const [search, setSearch] = useState("");
   const copy = t.library.azure;
+  const showMicrosoft = Boolean(oauthConfigured && !oauth && onConnect);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -59,7 +62,7 @@ export function AzureRepositoryList({
             {copy.connectDesc}
           </p>
           <div className="flex items-center justify-center gap-3">
-            {oauthConfigured && onConnect ? (
+            {showMicrosoft ? (
               <button
                 type="button"
                 onClick={onConnect}
@@ -128,6 +131,17 @@ export function AzureRepositoryList({
           <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
             {search ? copy.noMatchingDesc : orgs.length === 0 ? copy.emptyOrgsDesc : copy.noReposDesc}
           </p>
+          {!search && orgs.length === 0 && showMicrosoft ? (
+            <button
+              type="button"
+              onClick={onConnect}
+              disabled={connecting}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-foreground px-6 py-3 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+            >
+              {connecting ? <Loader2 className="size-4 animate-spin" /> : null}
+              {copy.connectButton}
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="divide-y divide-border/50">

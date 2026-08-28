@@ -191,7 +191,7 @@
     "noMatching": "Aucun dépôt correspondant",
     "noMatchingDesc": "Essayez une autre recherche.",
     "emptyOrgs": "Aucune organisation Azure DevOps",
-    "emptyOrgsDesc": "Le compte connecté n'a aucune organisation, ou le PAT n'a pas le droit Code (Read).",
+    "emptyOrgsDesc": "Connectez-vous avec Microsoft, ou saisissez le nom de l'organisation à côté du PAT dans les paramètres Git. Un PAT Code (Read) ne peut pas découvrir les organisations.",
     "loading": "Chargement des dépôts…"
   }
 }

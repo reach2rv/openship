@@ -191,7 +191,7 @@
     "noMatching": "没有匹配的仓库",
     "noMatchingDesc": "请尝试其他搜索。",
     "emptyOrgs": "没有 Azure DevOps 组织",
-    "emptyOrgsDesc": "已连接账户没有组织，或 PAT 缺少 Code (Read) 权限。",
+    "emptyOrgsDesc": "使用 Microsoft 登录，或在 Git 设置中于 PAT 旁填写组织名称。仅有 Code (Read) 的 PAT 无法发现组织。",
     "loading": "正在加载仓库…"
   }
 }

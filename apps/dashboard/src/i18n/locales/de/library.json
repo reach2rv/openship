@@ -191,7 +191,7 @@
     "noMatching": "Keine passenden Repositories",
     "noMatchingDesc": "Versuche eine andere Suche.",
     "emptyOrgs": "Keine Azure-DevOps-Organisationen",
-    "emptyOrgsDesc": "Das verbundene Konto hat keine Organisationen, oder dem PAT fehlt Code (Read).",
+    "emptyOrgsDesc": "Melde dich mit Microsoft an, oder gib den Organisationsnamen neben dem PAT in den Git-Einstellungen ein. Ein Code-(Read)-PAT kann Organisationen nicht selbst finden.",
     "loading": "Repositories werden geladen…"
   }
 }

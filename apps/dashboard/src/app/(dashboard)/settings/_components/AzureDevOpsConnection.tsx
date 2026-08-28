@@ -34,12 +34,15 @@ export function AzureDevOpsConnection() {
   const [connecting, setConnecting] = useState(false);
   const [savingPat, setSavingPat] = useState(false);
   const [pat, setPat] = useState("");
+  const [organization, setOrganization] = useState("");
   const pendingConnectRef = useRef(false);
 
   const loadStatus = useCallback(async () => {
     setLoading(true);
     try {
-      setStatus(await azureApi.getStatus());
+      const next = await azureApi.getStatus();
+      setStatus(next);
+      setOrganization((prev) => prev || next.orgs[0] || "");
     } catch {
       setStatus(null);
     } finally {
@@ -98,6 +101,7 @@ export function AzureDevOpsConnection() {
     try {
       await azureApi.disconnect();
       setPat("");
+      setOrganization("");
       await loadStatus();
     } catch (err) {
       showToast(getApiErrorMessage(err, copy.disconnectFailed), "error", toastTitle);
@@ -106,10 +110,11 @@ export function AzureDevOpsConnection() {
 
   const savePat = async () => {
     const trimmed = pat.trim();
-    if (!trimmed) return;
+    const org = organization.trim();
+    if (!trimmed && !org) return;
     setSavingPat(true);
     try {
-      await azureApi.setInstanceToken(trimmed);
+      await azureApi.setInstanceToken(trimmed || null, org || null);
       setPat("");
       await loadStatus();
       showToast(copy.saved, "success", toastTitle);
@@ -163,16 +168,7 @@ export function AzureDevOpsConnection() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {status?.connected ? (
-                <button
-                  type="button"
-                  onClick={() => void disconnect()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50"
-                >
-                  <Unplug className="size-3.5" />
-                  {copy.disconnect}
-                </button>
-              ) : status?.oauthConfigured ? (
+              {status?.oauthConfigured && !status.oauth ? (
                 <button
                   type="button"
                   onClick={() => void connect()}
@@ -182,9 +178,20 @@ export function AzureDevOpsConnection() {
                   {connecting ? <Loader2 className="size-3.5 animate-spin" /> : null}
                   {connecting ? copy.connecting : copy.connect}
                 </button>
-              ) : (
+              ) : null}
+              {status?.connected ? (
+                <button
+                  type="button"
+                  onClick={() => void disconnect()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50"
+                >
+                  <Unplug className="size-3.5" />
+                  {copy.disconnect}
+                </button>
+              ) : null}
+              {!status?.oauthConfigured ? (
                 <p className="text-xs text-muted-foreground">{copy.oauthNotConfigured}</p>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -194,6 +201,16 @@ export function AzureDevOpsConnection() {
               {copy.patLabel}
             </label>
             <p className="text-xs text-muted-foreground leading-relaxed">{copy.patHint}</p>
+            <input
+              type="text"
+              value={organization}
+              onChange={(e) => setOrganization(e.target.value)}
+              placeholder={copy.orgPlaceholder}
+              autoComplete="off"
+              aria-label={copy.orgLabel}
+              className="w-full rounded-xl border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <p className="text-xs text-muted-foreground leading-relaxed">{copy.orgHint}</p>
             <div className="flex gap-2">
               <input
                 type="password"
@@ -206,7 +223,7 @@ export function AzureDevOpsConnection() {
               <button
                 type="button"
                 onClick={() => void savePat()}
-                disabled={savingPat || !pat.trim()}
+                disabled={savingPat || (!pat.trim() && !organization.trim())}
                 className="rounded-xl bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-40"
               >
                 {savingPat ? <Loader2 className="size-4 animate-spin" /> : copy.patSave}
