@@ -63,10 +63,10 @@ The control plane runs locally and drives your servers over SSH. No login, no te
 
 | Platform | Download |
 |---|---|
-| **macOS** (Apple Silicon) | [Openship-arm64.dmg](https://github.com/oblien/openship/releases/latest/download/Openship-arm64.dmg) |
-| **macOS** (Intel) | [Openship-x64.dmg](https://github.com/oblien/openship/releases/latest/download/Openship-x64.dmg) |
-| **Windows** | [Openship-win32-x64.zip](https://github.com/oblien/openship/releases/latest/download/Openship-win32-x64.zip) |
-| **Linux** | [Openship.AppImage](https://github.com/oblien/openship/releases/latest/download/Openship.AppImage) |
+| **macOS** (Apple Silicon) | [Openship-arm64.dmg](https://github.com/reach2rv/openship/releases/latest/download/Openship-arm64.dmg) |
+| **macOS** (Intel) | [Openship-x64.dmg](https://github.com/reach2rv/openship/releases/latest/download/Openship-x64.dmg) |
+| **Windows** | [Openship-win32-x64.zip](https://github.com/reach2rv/openship/releases/latest/download/Openship-win32-x64.zip) |
+| **Linux** | [Openship.AppImage](https://github.com/reach2rv/openship/releases/latest/download/Openship.AppImage) |
 
 Linux: `chmod +x Openship.AppImage && ./Openship.AppImage`. Already have the CLI? `openship install` fetches and launches it. Links always point at the newest release.
 
@@ -77,7 +77,7 @@ From the desktop app you connect a server (SSH) or Openship Cloud and deploy to 
 Install the CLI (it bundles the API + dashboard), then run **`openship`** — an interactive wizard creates the first admin, wires your domain, and installs Openship as a boot service. Run it again anytime to manage the instance.
 
 ```bash
-curl -fsSL https://get.openship.io | sh          # install  (or: npm i -g openship — needs Node 22+)
+curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh   # install  (or: npm i -g @reach2rv/openship — needs Node 22+)
 openship                                          # guided setup, then control panel
 ```
 
@@ -101,8 +101,8 @@ A self-hosted instance **always requires login** (the admin you create in setup)
 > **Preview an unreleased build (dev).** To run the CLI built straight from source — a branch, tag, or `main` ahead of the next release — install the from-source build:
 >
 > ```bash
-> curl -fsSL https://get.openship.io/dev | sh                  # main (default)
-> curl -fsSL https://get.openship.io/dev | OPENSHIP_REF=dev sh  # a branch/tag (var goes on sh, not curl)
+> curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | sh   # main (default)
+> curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install-source.sh | OPENSHIP_REF=dev sh  # a branch/tag
 > openship-dev                                     # same CLI, built from source
 > openship-dev update                              # pull latest source + rebuild (no release needed)
 > ```
@@ -150,7 +150,7 @@ echo 'source <(openship completion zsh)' >> ~/.zshrc
 The self-hosted stack lives in **`docker/docker-compose.yml`** and **pulls** published images from GitHub Container Registry (`ghcr.io/oblien/*`) — no build tooling, no monorepo compile. Run it from the repo root:
 
 ```bash
-git clone https://github.com/oblien/openship.git && cd openship
+git clone https://github.com/reach2rv/openship.git && cd openship
 cp .env.example .env          # then edit
 docker compose --env-file .env -f docker/docker-compose.yml up -d
 ```

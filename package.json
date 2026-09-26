@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oblien/openship.git"
+    "url": "https://github.com/reach2rv/openship.git"
   },
   "workspaces": [
     "apps/*",

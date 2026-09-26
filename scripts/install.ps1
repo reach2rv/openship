@@ -1,4 +1,4 @@
-# Openship installer (Windows) — https://get.openship.io
+# Openship installer (Windows) — this fork (reach2rv/openship)
 #
 #   irm https://git.openship.io/windows | iex
 #
@@ -23,7 +23,7 @@ $ProgressPreference = "SilentlyContinue"  # PS5.1's progress bar cripples downlo
 function Info($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Fail($m) { Write-Error $m; exit 1 }
 
-$Repo      = "oblien/openship"
+$Repo      = "reach2rv/openship"
 $NodeMajor = 22
 $NodeDist  = "https://nodejs.org/dist"
 

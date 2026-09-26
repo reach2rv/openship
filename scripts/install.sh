@@ -1,7 +1,7 @@
 #!/bin/sh
-# Openship installer — https://get.openship.io
+# Openship installer — this fork (reach2rv/openship), not upstream get.openship.io
 #
-#   curl -fsSL https://get.openship.io | sh
+#   curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh
 #
 # Installs the Openship CLI as a self-contained, sha256-verified payload that
 # runs under NODE. Node is the shipped runtime: this installer prefers a system
@@ -23,7 +23,7 @@ set -eu
 info() { printf '\033[36m==>\033[0m %s\n' "$1"; }
 err()  { printf '\033[31merror:\033[0m %s\n' "$1" >&2; }
 
-REPO="oblien/openship"
+REPO="reach2rv/openship"
 NODE_MAJOR=22
 NODE_DIST="https://nodejs.org/dist"
 
@@ -145,7 +145,7 @@ if command -v node >/dev/null 2>&1 && node -e 'process.exit(+process.versions.no
 elif [ -x "$VENDORED_NODE" ]; then
   exec "$VENDORED_NODE" "$CLI" "$@"
 else
-  echo "openship: no Node >= 22 found (system or vendored). Reinstall: curl -fsSL https://get.openship.io | sh" >&2
+  echo "openship: no Node >= 22 found (system or vendored). Reinstall: curl -fsSL https://raw.githubusercontent.com/reach2rv/openship/main/scripts/install.sh | sh" >&2
   exit 127
 fi
 LAUNCHER_EOF
