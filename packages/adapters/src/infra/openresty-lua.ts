@@ -92,11 +92,13 @@ export const EDGE_SERVER_NAMES_HASH_BUCKET_SIZE = 128;
  * value continues to win. Writing it per-vhost would also mean regenerating every vhost on
  * every box to change the floor.
  *
- * 50m, not larger: it is generous for the uploads a web app actually does, and the ceiling
- * is what stops a single unbounded request from filling the disk of a box whose whole job
- * is proxying. A project that needs more sets its own.
+ * 300m on this fork: the artifact-upload path accepts prebuilt publish zips up to
+ * MAX_SOURCE_BYTES (300MB), and the panel's own upload endpoint lives on the API vhost,
+ * which has no per-project tunable to raise the floor — so the http-scope default IS the
+ * artifact ceiling. Still a ceiling (a single unbounded request cannot fill the disk of a
+ * box whose whole job is proxying), and a project that wants smaller sets its own.
  */
-export const EDGE_CLIENT_MAX_BODY_SIZE = "50m";
+export const EDGE_CLIENT_MAX_BODY_SIZE = "300m";
 
 /**
  * Shared-memory zones the openship Lua depends on, and the ONE definition of

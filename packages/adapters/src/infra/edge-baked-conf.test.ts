@@ -45,7 +45,7 @@ describe("baked edge nginx.conf", () => {
     // so any project that never opened that panel served nginx's built-in 1 MB and 413'd
     // uploads before the app saw them.
     expect(conf).toContain(`client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};`);
-    expect(EDGE_CLIENT_MAX_BODY_SIZE).toBe("50m");
+    expect(EDGE_CLIENT_MAX_BODY_SIZE).toBe("300m");
   });
 
   test("sets it in http scope, so a project's own value still wins", () => {
