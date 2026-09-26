@@ -62,7 +62,17 @@
     "clearSelection": "Effacer la sélection",
     "packing": "Empaquetage du dossier…",
     "uploading": "Envoi…",
-    "continue": "Continuer"
+    "continue": "Continuer",
+    "kindSource": "Dossier source",
+    "kindSourceDesc": "Téléversez le projet et compilez-le sur le serveur",
+    "kindArtifact": "Paquet précompilé",
+    "kindArtifactDesc": "Téléversez un zip dotnet publish linux — sans recompilation",
+    "artifactSubtitle": "La sortie de publication est conservée telle quelle. L'hôte l'exécute avec le runtime .NET.",
+    "dropArtifactTitle": "Déposez un zip de publication ou un dossier, ou parcourez",
+    "dropArtifactSubtitle": "Sortie linux-x64 ou linux-arm64 pour {stack}. Les zips Windows sont refusés.",
+    "browseFolder": "Choisir un dossier",
+    "browseZip": "Choisir un zip",
+    "cloudBareWarn": "Les espaces de travail cloud ne peuvent pas exécuter un processus hôte bare. Déployez ce paquet sur un serveur Linux auto-hébergé."
   },
   "localProjects": {
     "title": "Projets locaux",

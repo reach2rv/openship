@@ -18,14 +18,23 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
-import { getBuildImage, safeErrorMessage, type StackId } from "@repo/core";
+import { inflateRawSync } from "node:zlib";
+import {
+  getBuildImage,
+  inflateZipEntries,
+  isGzipBuffer,
+  isZipBuffer,
+  listZipEntries,
+  safeErrorMessage,
+  type StackId,
+} from "@repo/core";
 import { provisionCloudWorkspace } from "@repo/adapters";
 import { env } from "../../../config/env";
 import { getNamespaceClient } from "../../../lib/openship-cloud";
@@ -268,12 +277,13 @@ export async function acceptRelayUpload(
   }
 
   const temporary = await mkdtemp(join(dirname(session.stagingDir), "openship-transfer-"));
-  const archivePath = join(temporary, "source.tar.gz");
+  const archivePath = join(temporary, "source.archive");
   const extracted = join(temporary, "source");
   try {
     await streamToFile(body, archivePath);
     await mkdir(extracted, { mode: 0o700 });
-    await extractSourceArchive(archivePath, extracted);
+    await extractUploadedArchive(archivePath, extracted);
+    await unwrapSingleRoot(extracted);
     // A failed upload never leaves a partially extracted source for scanning or
     // a retry, and archive members cannot overwrite the archive being read.
     await rm(session.stagingDir, { recursive: true, force: true });
@@ -282,6 +292,47 @@ export async function acceptRelayUpload(
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
+}
+
+/**
+ * Extract a client-supplied zip or tar.gz into `destDir`. Zip-Slip names are
+ * rejected before any file is written (zip by listZipEntries's local-header
+ * validation, tar.gz by extractSourceArchive's entry gate).
+ */
+export async function extractUploadedArchive(archivePath: string, destDir: string): Promise<void> {
+  const head = await readFile(archivePath);
+  const probe = head.subarray(0, 4);
+  if (isZipBuffer(probe)) {
+    // Prebuilt publish zips (e.g. dotnet publish artifacts) — no third-party
+    // zip dependency; entries are fully buffered, so size limits from the
+    // byte-limit stream still apply.
+    const files = await inflateZipEntries(listZipEntries(head), (src) => inflateRawSync(src));
+    for (const file of files) {
+      const target = join(destDir, file.name);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, file.data);
+    }
+    return;
+  }
+  // Not a zip — fall through to the hardened tar.gz path even when the magic
+  // bytes are not gzip: some clients send application/gzip without a sniffable
+  // prefix if the stream was wrapped; the tar listing is the real gate.
+  if (!isGzipBuffer(probe) && probe[0] !== 0x1f) {
+    // fall through deliberately (see comment above)
+  }
+  await extractSourceArchive(archivePath, destDir);
+}
+
+/** If the archive wrapped a single top-level folder, lift its children up. */
+export async function unwrapSingleRoot(destDir: string): Promise<void> {
+  const entries = await readdir(destDir, { withFileTypes: true });
+  if (entries.length !== 1 || !entries[0]!.isDirectory()) return;
+  const nested = join(destDir, entries[0]!.name);
+  const children = await readdir(nested);
+  for (const child of children) {
+    await rename(join(nested, child), join(destDir, child));
+  }
+  await rm(nested, { recursive: true, force: true });
 }
 
 async function streamToFile(body: ReadableStream<Uint8Array>, dest: string): Promise<void> {

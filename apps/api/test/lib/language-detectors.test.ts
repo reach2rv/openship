@@ -312,6 +312,50 @@ describe(".NET recipe", () => {
     expect(r.startCommand).toBe("");
     expect(r.outputDirectory).toBe("publish/wwwroot");
   });
+
+  it("linux publish output → skip build, run the dll at the tree root", () => {
+    const r = detectStack(
+      [
+        { name: "HelloApi.dll" },
+        { name: "HelloApi.runtimeconfig.json" },
+        { name: "HelloApi.deps.json" },
+      ],
+      undefined,
+      {
+        "helloapi.runtimeconfig.json": JSON.stringify({
+          runtimeOptions: {
+            tfm: "net8.0",
+            framework: { name: "Microsoft.AspNetCore.App", version: "8.0.0" },
+          },
+        }),
+      },
+    );
+    expect(r.stack).toBe("dotnet");
+    expect(r.packageManager).toBe("dotnet");
+    expect(r.buildCommand).toBe("");
+    expect(r.installCommand).toBe("");
+    expect(r.outputDirectory).toBe("");
+    expect(r.productionPaths).toEqual([]);
+    expect(r.startCommand).toBe("ASPNETCORE_URLS=http://0.0.0.0:$PORT dotnet HelloApi.dll");
+  });
+
+  it("refuses a Windows RID publish tree (scan must 400)", () => {
+    expect(() =>
+      detectStack(
+        [
+          { name: "HelloApi.dll" },
+          { name: "HelloApi.runtimeconfig.json" },
+          { name: "HelloApi.deps.json" },
+        ],
+        undefined,
+        {
+          "helloapi.runtimeconfig.json": JSON.stringify({
+            runtimeOptions: { tfm: "net8.0", runtimeTarget: { name: ".NETCoreApp,Version=v8.0/win-x64" } },
+          }),
+        },
+      ),
+    ).toThrow(/Windows/);
+  });
 });
 
 describe("PHP FrankenPHP recipe", () => {

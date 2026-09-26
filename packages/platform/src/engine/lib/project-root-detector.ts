@@ -419,7 +419,7 @@ export function discoverProjectRootHints(
     }
 
     const baseName = pathPosix.basename(normalizedPath).toLowerCase();
-    if (!DISCOVERED_ROOT_MARKERS.has(baseName)) {
+    if (!DISCOVERED_ROOT_MARKERS.has(baseName) && !baseName.endsWith(".runtimeconfig.json")) {
       continue;
     }
 

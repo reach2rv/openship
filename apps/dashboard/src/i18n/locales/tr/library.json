@@ -53,7 +53,17 @@
     "clearSelection": "Seçimi temizle",
     "packing": "Klasör paketleniyor…",
     "uploading": "Yükleniyor…",
-    "continue": "Devam et"
+    "continue": "Devam et",
+    "kindSource": "Kaynak klasörü",
+    "kindSourceDesc": "Projeyi yükleyin ve sunucuda derleyin",
+    "kindArtifact": "Önceden derlenmiş paket",
+    "kindArtifactDesc": "linux dotnet publish zip veya klasörü yükleyin — yeniden derleme yok",
+    "artifactSubtitle": "Publish çıktısı olduğu gibi korunur. Ana makine onu .NET çalışma zamanıyla çalıştırır.",
+    "dropArtifactTitle": "Bir publish zip'i veya klasörü bırakın ya da göz atın",
+    "dropArtifactSubtitle": "{stack} için linux-x64 veya linux-arm64 çıktısı. Windows zip'leri reddedilir.",
+    "browseFolder": "Klasör seç",
+    "browseZip": "Zip seç",
+    "cloudBareWarn": "Bulut çalışma alanları bare ana makine süreci çalıştıramaz. Bu paketi kendi kendine barındırılan bir Linux sunucusuna dağıtın."
   },
   "localProjects": {
     "title": "Yerel Projeler",

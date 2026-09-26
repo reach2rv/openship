@@ -275,7 +275,7 @@ describe("i18n locale parity vs the English source", () => {
     deploy: 133,
     settings: 99,
     projectSettings: 48,
-    importProject: 43,
+    importProject: 51, // +8: persistPathsPlaceholder verbatim (example folder names are language-neutral)
     billing: 28,
     onboarding: 24,
     projectDetail: 19,

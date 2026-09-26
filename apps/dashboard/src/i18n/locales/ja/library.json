@@ -62,7 +62,17 @@
     "clearSelection": "選択をクリア",
     "packing": "フォルダをパッケージ化中…",
     "uploading": "アップロード中…",
-    "continue": "続行"
+    "continue": "続行",
+    "kindSource": "ソースフォルダ",
+    "kindSourceDesc": "プロジェクトをアップロードしてサーバー上でビルド",
+    "kindArtifact": "事前ビルド済みパッケージ",
+    "kindArtifactDesc": "linux 向け dotnet publish の zip やフォルダをアップロード — 再ビルド不要",
+    "artifactSubtitle": "publish の出力はそのまま保持され、ホストが .NET ランタイムで実行します。",
+    "dropArtifactTitle": "publish の zip またはフォルダをドロップ、または参照",
+    "dropArtifactSubtitle": "{stack} 向けの linux-x64 / linux-arm64 出力。Windows の zip は拒否されます。",
+    "browseFolder": "フォルダを選択",
+    "browseZip": "zip を選択",
+    "cloudBareWarn": "クラウドワークスペースでは bare ホストプロセスを実行できません。このパッケージはセルフホストの Linux サーバーにデプロイしてください。"
   },
   "localProjects": {
     "title": "ローカルプロジェクト",

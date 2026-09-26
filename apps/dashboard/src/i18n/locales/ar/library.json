@@ -62,7 +62,17 @@
     "clearSelection": "مسح التحديد",
     "packing": "جارٍ حزم المجلد…",
     "uploading": "جارٍ الرفع…",
-    "continue": "متابعة"
+    "continue": "متابعة",
+    "kindSource": "مجلد المصدر",
+    "kindSourceDesc": "ارفع المشروع وابنِه على الخادم",
+    "kindArtifact": "حزمة جاهزة",
+    "kindArtifactDesc": "ارفع حزمة dotnet publish جاهزة — دون إعادة بناء",
+    "artifactSubtitle": "يُبقى ناتج النشر كما هو. يشغّله المضيف ببيئة .NET.",
+    "dropArtifactTitle": "أفلت حزمة النشر أو مجلدها، أو تصفح",
+    "dropArtifactSubtitle": "إخراج linux-x64 أو linux-arm64 لـ {stack}. تُرفض حزم Windows.",
+    "browseFolder": "اختر مجلداً",
+    "browseZip": "اختر ملف zip",
+    "cloudBareWarn": "مساحات العمل السحابية لا يمكنها تشغيل عملية مضيف bare. انشر هذه الحزمة على خادم Linux مستضاف ذاتياً."
   },
   "localProjects": {
     "title": "المشاريع المحلية",
