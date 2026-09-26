@@ -63,7 +63,17 @@
     "clearSelection": "Auswahl aufheben",
     "packing": "Ordner wird gepackt…",
     "uploading": "Wird hochgeladen…",
-    "continue": "Weiter"
+    "continue": "Weiter",
+    "kindSource": "Quellordner",
+    "kindSourceDesc": "Projekt hochladen und auf dem Server bauen",
+    "kindArtifact": "Fertiges Paket",
+    "kindArtifactDesc": "Ein linux-dotnet-publish-Zip oder -Paket hochladen — kein Neubau",
+    "artifactSubtitle": "Der Publish-Output bleibt unverändert. Der Host führt ihn mit der .NET-Runtime aus.",
+    "dropArtifactTitle": "Publish-Zip oder -Ordner hierher ziehen oder wählen",
+    "dropArtifactSubtitle": "linux-x64- oder linux-arm64-Ausgabe für {stack}. Windows-Zips werden abgelehnt.",
+    "browseFolder": "Ordner wählen",
+    "browseZip": "Zip wählen",
+    "cloudBareWarn": "Cloud-Workspaces können keinen Bare-Host-Prozess ausführen. Paket auf einem selbst gehosteten Linux-Server bereitstellen."
   },
   "localProjects": {
     "title": "Lokale Projekte",

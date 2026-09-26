@@ -427,6 +427,26 @@ export class SshExecutor implements CommandExecutor {
     return this.awaitSftpOpen(opening, client);
   }
 
+  /**
+   * Escape hatch for operations that need the raw SFTP wrapper (readdir,
+   * stat with attrs, binary streams) without opening a second session
+   * against the server's MaxSessions. `fn` receives the executor's shared
+   * pooled channel: it must not call end()/close() on it or cache it past
+   * the call. Channel-level failures drop the shared channel so the next
+   * op reopens clean, matching the built-in file ops.
+   */
+  async withSftp<T>(fn: (sftp: SFTPWrapper) => Promise<T>): Promise<T> {
+    return this.withChannelRetry(async () => {
+      const sftp = await this.sftp();
+      try {
+        return await fn(sftp);
+      } catch (err) {
+        if (SshExecutor.isChannelError(err)) this.dropSftp();
+        throw err;
+      }
+    });
+  }
+
   /** Close + forget the shared SFTP channel (frees its session) without
    *  touching the SSH client, so file ops can reopen on the same connection. */
   private dropSftp(): void {

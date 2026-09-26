@@ -61,6 +61,8 @@ interface PreparedConfigArgs {
   uploadSessionId?: string;
   gitProvider?: DeploymentConfig["gitProvider"];
   gitProject?: string;
+  /** Upload carries a prebuilt artifact (publish zip) — skip install/build and pin bare. */
+  artifact?: boolean;
 }
 
 interface LoadedProjectState {
@@ -821,6 +823,7 @@ export function useDeploymentConfig() {
         uploadSessionId,
         gitProvider,
         gitProject,
+        artifact,
       } = args;
       const preparedContext = resolvePreparedProjectContext(response, newEndpointDomainType);
       const routingState = resolvePreparedRoutingState(
@@ -852,6 +855,8 @@ export function useDeploymentConfig() {
           gitProject,
           localPath,
           uploadSessionId,
+          buildKind: artifact ? "prebuilt" : prev.buildKind,
+          volumes: artifact ? (prev.volumes ?? []) : prev.volumes,
           projectName: project?.name || repoName,
           // The scan echoes back the compose path it actually used (request value or
           // the one openship.json declared), so the field shows what's in effect and
@@ -912,7 +917,9 @@ export function useDeploymentConfig() {
           // must NOT be silently downgraded to Direct-on-host (bare) on save. Only
           // brand-new deploys (no projectId) use the projectType-derived default.
           runtimeMode:
-            projectId && (project?.runtimeMode === "bare" || project?.runtimeMode === "docker")
+            artifact && !projectId
+              ? "bare"
+              : projectId && (project?.runtimeMode === "bare" || project?.runtimeMode === "docker")
               ? project.runtimeMode
               : projectId
                 ? "docker"
@@ -1341,7 +1348,7 @@ export function useDeploymentConfig() {
   const initializeFromUpload = useCallback(
     async (
       sessionId: string,
-      context?: { projectId?: string; stack?: string; packageManager?: string; name?: string },
+      context?: { projectId?: string; stack?: string; packageManager?: string; name?: string; artifact?: boolean },
     ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
       try {
         let project: PersistedProject = null;
@@ -1367,7 +1374,8 @@ export function useDeploymentConfig() {
         const stackDef: StackDefinition | undefined = context?.stack
           ? (STACKS[context.stack as StackId] as StackDefinition)
           : undefined;
-        if (context?.stack && stackDef) {
+        const seedFromStack = context?.stack && stackDef && !context.artifact;
+        if (seedFromStack && stackDef) {
           name = context.name || "app";
           const pm = context.packageManager || "npm";
           response = {
@@ -1440,6 +1448,7 @@ export function useDeploymentConfig() {
               branches: [],
               projectId: context?.projectId,
               uploadSessionId: sessionId,
+              artifact: context?.artifact,
             },
           ),
         );

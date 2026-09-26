@@ -63,7 +63,17 @@
     "clearSelection": "清除选择",
     "packing": "正在打包文件夹…",
     "uploading": "上传中…",
-    "continue": "继续"
+    "continue": "继续",
+    "kindSource": "源码文件夹",
+    "kindSourceDesc": "上传项目并在服务器上构建",
+    "kindArtifact": "预构建包",
+    "kindArtifactDesc": "上传 linux dotnet publish 的 zip 或文件夹 — 无需重新构建",
+    "artifactSubtitle": "发布输出保持原样。主机使用 .NET 运行时直接运行。",
+    "dropArtifactTitle": "拖入发布 zip 或文件夹，或浏览选择",
+    "dropArtifactSubtitle": "{stack} 的 linux-x64 或 linux-arm64 输出。拒绝 Windows zip。",
+    "browseFolder": "选择文件夹",
+    "browseZip": "选择 zip",
+    "cloudBareWarn": "云工作区无法运行 bare 宿主进程。请将此包部署到自托管的 Linux 服务器。"
   },
   "localProjects": {
     "title": "本地项目",

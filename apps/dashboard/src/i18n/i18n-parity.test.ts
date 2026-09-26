@@ -277,7 +277,7 @@ describe("i18n locale parity vs the English source", () => {
     // identical in every locale (same convention as "GitHub"). 2 keys × 8 locales.
     settings: 115,
     projectSettings: 48,
-    importProject: 43,
+    importProject: 51, // +8: persistPathsPlaceholder verbatim (example folder names are language-neutral)
     billing: 28,
     onboarding: 24,
     projectDetail: 19,

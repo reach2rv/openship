@@ -485,9 +485,14 @@ export class BareRuntime implements RuntimeAdapter {
         logger: log,
         abort: abort.signal,
         preflight: async (cfg, plog, localExec) => {
-          await this.ensureToolchain(localExec, cfg.stack, plog);
-          plog.log("Checking runtime tools on target server...\n");
-          await this.ensureToolchain(this.executor, cfg.stack, plog);
+          // Prebuilt artifacts (publish zip upload) have nothing to build —
+          // skip the runtime-toolchain preflight entirely.
+          const skipBuild = !cfg.installCommand?.trim() && !cfg.buildCommand?.trim();
+          if (!skipBuild) {
+            await this.ensureToolchain(localExec, cfg.stack, plog);
+            plog.log("Checking runtime tools on target server...\n");
+            await this.ensureToolchain(this.executor, cfg.stack, plog);
+          }
           if (this.systemManager) {
             plog.log("Ensuring rsync is installed on target server...\n");
             await this.systemManager.ensureComponents(["rsync"], (entry) => plog.callback(entry));
@@ -615,7 +620,10 @@ export class BareRuntime implements RuntimeAdapter {
       },
       preflight: async (cfg, plog) => {
         if (abort.signal.aborted) throw new BuildCancelledError();
-        await this.ensureToolchain(this.executor, cfg.stack, plog);
+        const skipBuild = !cfg.installCommand?.trim() && !cfg.buildCommand?.trim();
+        if (!skipBuild) {
+          await this.ensureToolchain(this.executor, cfg.stack, plog);
+        }
         if (cfg.localPath) {
           await this.transferFiles(cfg.localPath, dir, plog);
         }
