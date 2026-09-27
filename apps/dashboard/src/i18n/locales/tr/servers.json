@@ -212,7 +212,8 @@
       "github": "Git Doğrulama",
       "security": "Güvenlik",
       "ports": "Port yönlendirme",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "files": "Dosyalar"
     },
     "healthy": "Sağlıklı",
     "issues": "Sorunlar var",

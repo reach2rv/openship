@@ -201,7 +201,8 @@
       "github": "Git",
       "security": "安全",
       "ports": "端口转发",
-      "terminal": "终端"
+      "terminal": "终端",
+      "files": "文件"
     },
     "healthy": "健康",
     "issues": "问题",

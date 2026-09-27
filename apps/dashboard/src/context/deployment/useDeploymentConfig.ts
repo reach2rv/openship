@@ -972,7 +972,7 @@ export function useDeploymentConfig() {
         composePath?: string;
         env?: Record<string, string>;
         preserveEnvState?: boolean;
-        provider?: "github" | "azure";
+        provider?: "github" | "azure" | "upload";
         gitProject?: string;
       },
     ): Promise<{

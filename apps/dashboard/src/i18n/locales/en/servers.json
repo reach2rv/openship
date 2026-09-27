@@ -265,7 +265,8 @@
       "github": "Git auth",
       "security": "Security",
       "ports": "Port forward",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "files": "Files"
     },
     "healthy": "Healthy",
     "issues": "Issues",

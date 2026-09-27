@@ -341,6 +341,13 @@ if (env.CLOUD_MODE) {
   const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
   app.route("/api/terminal", terminalRoutes);
 
+  /**
+   * Server file manager (SFTP-backed browse/edit/upload) - self-hosted
+   * only, same trust level as the terminal above.
+   */
+  const { fileManagerRoutes } = await import("./modules/file-manager/file-manager.routes");
+  app.route("/api/file-manager", fileManagerRoutes);
+
   /** Cloud account management - connect/disconnect to Openship Cloud */
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
   app.route("/api/cloud", cloudLocalRoutes);

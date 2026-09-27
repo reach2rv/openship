@@ -23,6 +23,7 @@ import { ComponentsTab } from "./_components/components-tab";
 import { ServerModuleUpdates } from "./_components/module-updates";
 import { ServerContainerUpdates } from "./_components/container-updates";
 import { TerminalTab } from "./_components/terminal-tab";
+import { FilesTab } from "./_components/files-tab";
 import {
   ConnectionBanner,
   classifyConnectionError,
@@ -42,7 +43,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { ServerInfrastructure } from "@/components/servers/ServerInfrastructure";
 
 
-type Tab = "overview" | "migrations" | "components" | "github" | "security" | "ports" | "terminal";
+type Tab = "overview" | "migrations" | "components" | "github" | "security" | "ports" | "terminal" | "files";
 type ManualActionMode = "remove" | null;
 
 interface TabDef {
@@ -65,6 +66,7 @@ const TABS: TabDef[] = [
   // the user's machine); hidden elsewhere.
   { key: "ports",      icon: "port-forwarding", desktopOnly: true },
   { key: "terminal",   icon: "terminal" },
+  { key: "files",      icon: "folder-open" },
 ];
 
 export default function ServerDetailPage({
@@ -780,6 +782,10 @@ export default function ServerDetailPage({
                 serverName={server?.name ?? undefined}
                 enabled={activeTab === "terminal"}
               />
+            )}
+
+            {activeTab === "files" && (
+              <FilesTab serverId={serverId} serverName={server?.name ?? undefined} />
             )}
 
             {/* Migrations — durable run list (rows like a project's deployments)

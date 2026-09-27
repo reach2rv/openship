@@ -201,7 +201,8 @@
       "github": "Git",
       "security": "Sécurité",
       "ports": "Redirection de ports",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "files": "Fichiers"
     },
     "healthy": "En bon état",
     "issues": "Problèmes",

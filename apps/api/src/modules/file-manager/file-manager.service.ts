@@ -21,7 +21,7 @@ import type { Server } from "@repo/db";
 import { AppError } from "@repo/core";
 import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import * as fs from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 
 export class FileManagerError extends AppError {
   constructor(
@@ -215,7 +215,7 @@ export function localFileManagerOps(): FileManagerOps {
       const target = posix.join(dir, name);
       const tmp = posix.join(dir, `.${name}.fm-part-${randomBytes(4).toString("hex")}`);
       let size = 0;
-      const ws = fs.createWriteStream(tmp);
+      const ws = createWriteStream(tmp);
       try {
         await run(target, async () => {
           const nodeStream = Readable.fromWeb(body);

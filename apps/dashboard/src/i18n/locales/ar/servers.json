@@ -201,7 +201,8 @@
       "github": "Git",
       "security": "الأمان",
       "ports": "إعادة توجيه المنافذ",
-      "terminal": "الطرفية"
+      "terminal": "الطرفية",
+      "files": "الملفات"
     },
     "healthy": "سليم",
     "issues": "مشكلات",

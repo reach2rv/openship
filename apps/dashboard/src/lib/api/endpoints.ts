@@ -588,6 +588,20 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  Server file manager (SFTP browse/edit/upload, self-hosted only) */
+  /* ---------------------------------------------------------------- */
+  files: {
+    list: (serverId: string) => `file-manager/${serverId}`,
+    stat: (serverId: string) => `file-manager/${serverId}/stat`,
+    content: (serverId: string) => `file-manager/${serverId}/content`,
+    download: (serverId: string) => `file-manager/${serverId}/download`,
+    upload: (serverId: string) => `file-manager/${serverId}/upload`,
+    mkdir: (serverId: string) => `file-manager/${serverId}/mkdir`,
+    rename: (serverId: string) => `file-manager/${serverId}/rename`,
+    remove: (serverId: string) => `file-manager/${serverId}/delete`,
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Backup destinations (per-user)                                  */
   /* ---------------------------------------------------------------- */
   backupDestinations: {

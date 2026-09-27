@@ -201,7 +201,8 @@
       "github": "Git",
       "security": "セキュリティ",
       "ports": "ポート転送",
-      "terminal": "ターミナル"
+      "terminal": "ターミナル",
+      "files": "ファイル"
     },
     "healthy": "正常",
     "issues": "問題あり",
